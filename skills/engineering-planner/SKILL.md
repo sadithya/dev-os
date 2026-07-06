@@ -209,4 +209,4 @@ Cover every failure or unexpected state:
 
 ## Next Step
 
-After both files are approved, proceed to `@skills/engineering-planner/execution.md` to begin the feature-by-feature build phase.
+After both files are approved, run `/implementation-specs` to generate the Supabase SQL schema and `.env.example`.
