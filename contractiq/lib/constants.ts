@@ -1,0 +1,16 @@
+export const MAX_FILE_SIZE_MB = 10
+export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+export const MAX_PAGES = 20
+export const MAX_TOKEN_COUNT = 15_000
+export const MIN_WORD_COUNT = 100
+export const MAX_CUSTOM_TERMS = 5
+export const CONFIDENCE_THRESHOLD_LOW = 50
+export const CONFIDENCE_THRESHOLD_HIGH = 80
+export const OPENAI_EXTRACTION_TEMP = 0.1
+export const OPENAI_CHAT_TEMP = 0.4
+export const OPENAI_EXTRACTION_MAX_TOKENS = 2000
+export const OPENAI_CHAT_MAX_TOKENS = 1000
+export const SIGNED_URL_EXPIRY_SECONDS = 3600
+export const MAX_CHAT_HISTORY = 200
+export const RATE_LIMIT_PROCESS_PER_HOUR = 20
+export const RATE_LIMIT_CHAT_PER_HOUR = 60
