@@ -15,7 +15,7 @@ async function uploadToStorage(
   contractId: string,
 ): Promise<string> {
   const admin = createAdminClient()
-  const filePath = `contracts/${userId}/${contractId}/${fileName}`
+  const filePath = `${userId}/${contractId}/${fileName}`
   const { error } = await admin.storage
     .from('contracts')
     .upload(filePath, buffer, { contentType: 'application/pdf', upsert: false })
