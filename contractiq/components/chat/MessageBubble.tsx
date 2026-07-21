@@ -23,10 +23,12 @@ const PAGE_CITATION_RE = /\[Page (\d+)\]/gi
 function renderContent(content: string, onPageClick: (page: number) => void): React.ReactNode[] {
   const parts: React.ReactNode[] = []
   let lastIndex = 0
+  let foundCitation = false
   let match: RegExpExecArray | null
   const re = new RegExp(PAGE_CITATION_RE.source, 'gi')
 
   while ((match = re.exec(content)) !== null) {
+    foundCitation = true
     if (match.index > lastIndex) {
       parts.push(content.slice(lastIndex, match.index))
     }
@@ -55,6 +57,14 @@ function renderContent(content: string, onPageClick: (page: number) => void): Re
 
   if (lastIndex < content.length) {
     parts.push(content.slice(lastIndex))
+  }
+
+  if (!foundCitation) {
+    parts.push(
+      <span key="unknown-source" style={{ color: '#9B9C9E', fontSize: 'inherit' }}>
+        {' '}Source: unknown
+      </span>,
+    )
   }
 
   return parts

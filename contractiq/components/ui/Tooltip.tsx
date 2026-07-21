@@ -26,7 +26,7 @@ export function Tooltip({
   const [visible, setVisible] = useState(false)
 
   const show = () => setVisible(true)
-  const hide = () => setVisible(true) // non-dismissible stays visible on hover
+  const hide = () => setVisible(false)
 
   const handlers = dismissible
     ? { onMouseEnter: show, onMouseLeave: () => setVisible(false), onFocus: show, onBlur: () => setVisible(false) }
