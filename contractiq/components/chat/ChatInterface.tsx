@@ -11,6 +11,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   created_at?: string
+  query_type?: 'contract' | 'history' | 'both'
 }
 
 interface ChatInterfaceProps {
@@ -106,6 +107,7 @@ export function ChatInterface({ contractId, initialSessionId, onPageClick }: Cha
           role: 'assistant',
           content: json.data.content,
           created_at: json.data.created_at,
+          query_type: json.data.query_type,
         },
       ])
     } catch {
@@ -193,6 +195,7 @@ export function ChatInterface({ contractId, initialSessionId, onPageClick }: Cha
               role={msg.role}
               content={msg.content}
               createdAt={msg.created_at}
+              queryType={msg.query_type}
               onPageClick={onPageClick}
             />
           ))

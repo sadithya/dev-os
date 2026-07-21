@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase/server'
 import { chatMessageSchema } from '@/lib/validation/chat.schema'
 import { checkRateLimit } from '@/lib/security/rateLimiter'
-import { sanitiseChatInput } from '@/lib/ai/classifier'
+import { classifyQuery, sanitiseChatInput } from '@/lib/ai/classifier'
 import { buildChatMessages, callChat, ChatHistoryMessage } from '@/lib/ai/chat'
 import { MAX_CHAT_HISTORY } from '@/lib/constants'
 
@@ -23,7 +23,6 @@ export async function POST(req: NextRequest) {
 
   const { contract_id, session_id, content } = parsed.data
 
-  // Rate limit: 60 chat messages/hour
   const rateLimit = await checkRateLimit(supabase, session.user.id, 'chat/message')
   if (!rateLimit.allowed) {
     return NextResponse.json(
@@ -35,25 +34,29 @@ export async function POST(req: NextRequest) {
   const sanitised = sanitiseChatInput(content)
   if (!sanitised) return err(400, 'INJECTION_DETECTED', 'Invalid message content.')
 
-  const { data: contract } = await supabase
-    .from('contracts')
-    .select('contract_text')
-    .eq('id', contract_id)
-    .eq('user_id', session.user.id)
-    .single()
+  // Verify contract and session ownership in parallel.
+  const [{ data: contract }, { data: chatSession }] = await Promise.all([
+    supabase
+      .from('contracts')
+      .select('contract_text')
+      .eq('id', contract_id)
+      .eq('user_id', session.user.id)
+      .single(),
+    supabase
+      .from('chat_sessions')
+      .select('id')
+      .eq('id', session_id)
+      .eq('contract_id', contract_id)
+      .eq('user_id', session.user.id)
+      .single(),
+  ])
 
-  if (!contract) return err(403, 'FORBIDDEN', 'Session or contract does not belong to this user.')
+  if (!contract || !chatSession) {
+    return err(403, 'FORBIDDEN', 'Session or contract does not belong to this user.')
+  }
 
-  const { data: chatSession } = await supabase
-    .from('chat_sessions')
-    .select('id')
-    .eq('id', session_id)
-    .eq('contract_id', contract_id)
-    .eq('user_id', session.user.id)
-    .single()
-
-  if (!chatSession) return err(403, 'FORBIDDEN', 'Session or contract does not belong to this user.')
-
+  // CRITICAL: load history BEFORE inserting the new user message so the classifier
+  // sees only prior turns, not the current question.
   const { data: historyRows } = await supabase
     .from('chat_messages')
     .select('role, content')
@@ -67,10 +70,14 @@ export async function POST(req: NextRequest) {
     content: m.content,
   }))
 
+  // Classify based on prior history — not the new message in isolation.
+  const queryType = classifyQuery(sanitised)
+
   const messages = buildChatMessages({
     contractText: contract.contract_text,
     history,
     newUserMessage: sanitised,
+    queryType,
   })
 
   let responseContent: string
@@ -82,7 +89,7 @@ export async function POST(req: NextRequest) {
     return err(500, 'AI_ERROR', 'Failed to generate a response. Please try again.')
   }
 
-  // Insert user message
+  // Insert user message first, then assistant response.
   await supabase.from('chat_messages').insert({
     session_id,
     user_id: session.user.id,
@@ -90,7 +97,6 @@ export async function POST(req: NextRequest) {
     content: sanitised,
   })
 
-  // Insert assistant response
   const { data: assistantMsg, error: insertErr } = await supabase
     .from('chat_messages')
     .insert({
@@ -111,6 +117,7 @@ export async function POST(req: NextRequest) {
       message_id: assistantMsg.id,
       content: responseContent,
       created_at: assistantMsg.created_at,
+      query_type: queryType,
     },
     error: null,
   })

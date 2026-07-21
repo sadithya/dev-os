@@ -1,6 +1,16 @@
 import OpenAI from 'openai'
-import { getChatSystemPrompt } from './prompts/chat-system'
-import { OPENAI_CHAT_TEMP, OPENAI_CHAT_MAX_TOKENS } from '@/lib/constants'
+import {
+  getContractSystemPrompt,
+  getHistorySystemPrompt,
+  getBothSystemPrompt,
+} from './prompts/chat-system'
+import { type QueryType } from './classifier'
+import {
+  OPENAI_CHAT_TEMP,
+  OPENAI_CHAT_MAX_TOKENS,
+  CHAT_CONTEXT_CONTRACT_TURNS,
+  CHAT_CONTEXT_HISTORY_TURNS,
+} from '@/lib/constants'
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -13,12 +23,30 @@ export function buildChatMessages(params: {
   contractText: string
   history: ChatHistoryMessage[]
   newUserMessage: string
+  queryType: QueryType
 }): OpenAI.ChatCompletionMessageParam[] {
-  const { contractText, history, newUserMessage } = params
+  const { contractText, history, newUserMessage, queryType } = params
+
+  if (queryType === 'history') {
+    // No contract text. Use up to CHAT_CONTEXT_HISTORY_TURNS turns (each turn = 2 messages).
+    const trimmed = history.slice(-(CHAT_CONTEXT_HISTORY_TURNS * 2))
+    return [
+      { role: 'system', content: getHistorySystemPrompt() },
+      ...trimmed.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user', content: newUserMessage },
+    ]
+  }
+
+  // CONTRACT or BOTH: include contract text + last CHAT_CONTEXT_CONTRACT_TURNS turns.
+  const trimmed = history.slice(-(CHAT_CONTEXT_CONTRACT_TURNS * 2))
+  const systemPrompt =
+    queryType === 'both'
+      ? getBothSystemPrompt(contractText)
+      : getContractSystemPrompt(contractText)
 
   return [
-    { role: 'system', content: getChatSystemPrompt(contractText) },
-    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'system', content: systemPrompt },
+    ...trimmed.map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: newUserMessage },
   ]
 }
