@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient, createAdminClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
+import { createAdminClient } from '@/lib/supabase/server'
 import { extractPDFText } from '@/lib/pdf/extractor'
 import { uploadBodySchema, validateFile } from '@/lib/validation/upload.schema'
-import { MAX_FILE_SIZE_BYTES } from '@/lib/constants'
 
 function err(status: number, code: string, message: string) {
   return NextResponse.json({ data: null, error: { code, message } }, { status })
@@ -24,9 +24,9 @@ async function uploadToStorage(
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   let formData: FormData
   try {
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   const { data: contract, error: dbError } = await supabase
     .from('contracts')
     .insert({
-      user_id: session.user.id,
+      user_id: user.id,
       file_name: file.name,
       contract_type: bodyParse.data.contract_type,
       contract_text: extracted.text,
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Non-blocking storage upload — failures leave file_path null (text viewer fallback handles this)
-  uploadToStorage(buffer, file.name, session.user.id, contract.id)
+  uploadToStorage(buffer, file.name, user.id, contract.id)
     .then((filePath) =>
       supabase.from('contracts').update({ file_path: filePath }).eq('id', contract.id),
     )

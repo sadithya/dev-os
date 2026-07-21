@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
 import { feedbackSchema } from '@/lib/validation/feedback.schema'
 
 function err(status: number, code: string, message: string) {
@@ -7,9 +7,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const body = await req.json().catch(() => null)
   const parsed = feedbackSchema.safeParse(body)
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     .from('contracts')
     .select('id')
     .eq('id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (!contract) return err(403, 'FORBIDDEN', 'Contract does not belong to this user.')
@@ -32,14 +32,14 @@ export async function POST(req: NextRequest) {
     .from('user_feedback')
     .select('id')
     .eq('contract_id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (existing) return err(409, 'ALREADY_SUBMITTED', 'Feedback already submitted for this contract.')
 
   const { data: feedback, error: dbError } = await supabase
     .from('user_feedback')
-    .insert({ contract_id, user_id: session.user.id, rating, comment: comment ?? null })
+    .insert({ contract_id, user_id: user.id, rating, comment: comment ?? null })
     .select('id')
     .single()
 

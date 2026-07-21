@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
 import { processSchema } from '@/lib/validation/process.schema'
 import { runExtraction } from '@/lib/ai/extraction'
 import { checkRateLimit } from '@/lib/security/rateLimiter'
@@ -9,9 +9,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const body = await req.json().catch(() => null)
   const parsed = processSchema.safeParse(body)
@@ -21,8 +21,7 @@ export async function POST(req: NextRequest) {
 
   const { contract_id, custom_terms } = parsed.data
 
-  // Rate limit: 20 extractions/hour
-  const rateLimit = await checkRateLimit(supabase, session.user.id, 'contracts/process')
+  const rateLimit = await checkRateLimit(user.id, 'contracts/process')
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { data: null, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests. Please wait before processing another contract.' } },
@@ -30,17 +29,15 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Verify contract ownership
   const { data: contract } = await supabase
     .from('contracts')
     .select('id, contract_text, contract_type, user_id')
     .eq('id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (!contract) return err(404, 'CONTRACT_NOT_FOUND', 'Contract not found.')
 
-  // Fetch saved custom terms from DB
   const { data: dbCustomTerms } = await supabase
     .from('custom_key_terms')
     .select('term_name')
@@ -52,7 +49,6 @@ export async function POST(req: NextRequest) {
     if (!seen.has(t)) { seen.add(t); allCustomTerms.push(t) }
   }
 
-  // Mark processing
   await supabase.from('contracts').update({ status: 'processing' }).eq('id', contract_id)
 
   let extractedTerms
@@ -69,10 +65,9 @@ export async function POST(req: NextRequest) {
     return err(status, code, (e as Error).message)
   }
 
-  // Insert key_terms rows
   const rows = extractedTerms.map((term) => ({
     contract_id,
-    user_id: session.user.id,
+    user_id: user.id,
     term_name: term.term_name,
     value: term.value,
     page_number: term.page_number,

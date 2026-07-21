@@ -327,23 +327,13 @@ CREATE POLICY "Users can insert own feedback"
 
 -- ------------------------------------------------------------
 -- rate_limit_events
--- DELETE is required so the API can prune rows older than 2 hours.
+-- Accessed exclusively via the service role (admin) client — no user-facing
+-- policies. RLS is enabled so the anon/user key has zero access; all reads,
+-- inserts, and deletes are performed server-side via createAdminClient().
 -- ------------------------------------------------------------
 DROP POLICY IF EXISTS "Users can view own rate_limit_events"   ON public.rate_limit_events;
 DROP POLICY IF EXISTS "Users can insert own rate_limit_events" ON public.rate_limit_events;
 DROP POLICY IF EXISTS "Users can delete own rate_limit_events" ON public.rate_limit_events;
-
-CREATE POLICY "Users can view own rate_limit_events"
-  ON public.rate_limit_events FOR SELECT
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own rate_limit_events"
-  ON public.rate_limit_events FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own rate_limit_events"
-  ON public.rate_limit_events FOR DELETE
-  USING (auth.uid() = user_id);
 
 
 -- ============================================================

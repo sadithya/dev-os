@@ -9,7 +9,8 @@ export const uploadBodySchema = z.object({
 
 export function validateFile(file: File): string | null {
   if (!file.name.toLowerCase().endsWith('.pdf')) return 'Only PDF files are accepted.'
-  if (file.size > MAX_FILE_SIZE_BYTES) return 'File exceeds the 10 MB limit.'
+  if (file.type && file.type !== 'application/pdf') return 'Only PDF files are accepted.'
   if (file.size === 0) return 'File is empty.'
+  if (file.size > MAX_FILE_SIZE_BYTES) return 'File exceeds the 10 MB limit.'
   return null
 }

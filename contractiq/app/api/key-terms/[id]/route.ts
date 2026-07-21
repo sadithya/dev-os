@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
 import { keyTermPatchSchema } from '@/lib/validation/key-term.schema'
 
 function err(status: number, code: string, message: string) {
@@ -7,9 +7,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const body = await req.json().catch(() => null)
   const parsed = keyTermPatchSchema.safeParse(body)
@@ -27,7 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .single()
 
   if (!term) return err(404, 'NOT_FOUND', 'Key term not found.')
-  if (term.user_id !== session.user.id) return err(403, 'FORBIDDEN', 'Key term does not belong to this user.')
+  if (term.user_id !== user.id) return err(403, 'FORBIDDEN', 'Key term does not belong to this user.')
 
   const updatePayload = term.is_edited
     ? { value: newValue }
@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('key_terms')
     .update(updatePayload)
     .eq('id', id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .select('id, value, ai_value, is_edited')
     .single()
 

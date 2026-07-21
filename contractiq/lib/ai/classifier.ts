@@ -30,13 +30,3 @@ export function classifyQuery(message: string): QueryType {
   return 'contract'
 }
 
-export function sanitiseChatInput(content: string): string {
-  return content
-    .replace(/#{3,}/g, '')
-    .replace(/<\|/g, '')
-    .replace(/\|>/g, '')
-    .replace(/\[INST\]/gi, '')
-    .replace(/<<SYS>>/gi, '')
-    .replace(/<\/SYS>/gi, '')
-    .trim()
-}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
 import { chatSessionSchema } from '@/lib/validation/chat.schema'
 
 function err(status: number, code: string, message: string) {
@@ -7,9 +7,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const body = await req.json().catch(() => null)
   const parsed = chatSessionSchema.safeParse(body)
@@ -23,21 +23,20 @@ export async function POST(req: NextRequest) {
     .from('contracts')
     .select('id')
     .eq('id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (!contract) return err(403, 'FORBIDDEN', 'Contract does not belong to this user.')
 
-  // Insert if not exists — ignore conflict on unique contract_id
   await supabase
     .from('chat_sessions')
-    .upsert({ contract_id, user_id: session.user.id }, { onConflict: 'contract_id', ignoreDuplicates: true })
+    .upsert({ contract_id, user_id: user.id }, { onConflict: 'contract_id', ignoreDuplicates: true })
 
   const { data: chatSession } = await supabase
     .from('chat_sessions')
     .select('id')
     .eq('contract_id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (!chatSession) return err(500, 'INTERNAL_ERROR', 'Failed to create chat session.')

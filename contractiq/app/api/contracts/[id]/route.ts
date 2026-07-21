@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient, createAdminClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
+import { createAdminClient } from '@/lib/supabase/server'
 import { SIGNED_URL_EXPIRY_SECONDS } from '@/lib/constants'
 
 function err(status: number, code: string, message: string) {
@@ -7,9 +8,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const { id } = params
 
@@ -17,12 +18,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .from('contracts')
     .select('id, file_name, contract_type, status, page_count, created_at, file_path, contract_text')
     .eq('id', id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (!contract) return err(404, 'CONTRACT_NOT_FOUND', 'Contract not found.')
 
-  // Non-blocking last_accessed_at update
   supabase.from('contracts').update({ last_accessed_at: new Date().toISOString() }).eq('id', id).then(() => {})
 
   let signedUrl: string | null = null
@@ -44,14 +44,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .from('chat_sessions')
     .select('id')
     .eq('contract_id', id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   const { data: existingFeedback } = await supabase
     .from('user_feedback')
     .select('rating')
     .eq('contract_id', id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   return NextResponse.json({

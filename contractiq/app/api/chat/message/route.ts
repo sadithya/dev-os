@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
+import { sanitizeForLLM } from '@/lib/security/promptInjectionGuard'
 import { chatMessageSchema } from '@/lib/validation/chat.schema'
 import { checkRateLimit } from '@/lib/security/rateLimiter'
-import { classifyQuery, sanitiseChatInput } from '@/lib/ai/classifier'
+import { classifyQuery } from '@/lib/ai/classifier'
 import { buildChatMessages, callChat, ChatHistoryMessage } from '@/lib/ai/chat'
 import { MAX_CHAT_HISTORY } from '@/lib/constants'
 
@@ -11,9 +12,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const body = await req.json().catch(() => null)
   const parsed = chatMessageSchema.safeParse(body)
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   const { contract_id, session_id, content } = parsed.data
 
-  const rateLimit = await checkRateLimit(supabase, session.user.id, 'chat/message')
+  const rateLimit = await checkRateLimit(user.id, 'chat/message')
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { data: null, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many chat messages. Please wait a moment.' } },
@@ -31,8 +32,8 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const sanitised = sanitiseChatInput(content)
-  if (!sanitised) return err(400, 'INJECTION_DETECTED', 'Invalid message content.')
+  const { safe, sanitised } = sanitizeForLLM(content)
+  if (!sanitised || !safe) return err(400, 'INJECTION_DETECTED', 'Invalid message content.')
 
   // Verify contract and session ownership in parallel.
   const [{ data: contract }, { data: chatSession }] = await Promise.all([
@@ -40,14 +41,14 @@ export async function POST(req: NextRequest) {
       .from('contracts')
       .select('contract_text')
       .eq('id', contract_id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single(),
     supabase
       .from('chat_sessions')
       .select('id')
       .eq('id', session_id)
       .eq('contract_id', contract_id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single(),
   ])
 
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     .from('chat_messages')
     .select('role, content')
     .eq('session_id', session_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: true })
     .limit(MAX_CHAT_HISTORY)
 
@@ -70,7 +71,6 @@ export async function POST(req: NextRequest) {
     content: m.content,
   }))
 
-  // Classify based on prior history — not the new message in isolation.
   const queryType = classifyQuery(sanitised)
 
   const messages = buildChatMessages({
@@ -89,10 +89,9 @@ export async function POST(req: NextRequest) {
     return err(500, 'AI_ERROR', 'Failed to generate a response. Please try again.')
   }
 
-  // Insert user message first, then assistant response.
   await supabase.from('chat_messages').insert({
     session_id,
-    user_id: session.user.id,
+    user_id: user.id,
     role: 'user',
     content: sanitised,
   })
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
     .from('chat_messages')
     .insert({
       session_id,
-      user_id: session.user.id,
+      user_id: user.id,
       role: 'assistant',
       content: responseContent,
     })

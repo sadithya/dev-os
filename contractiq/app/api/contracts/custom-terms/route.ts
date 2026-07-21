@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/security/authGuard'
 import { customTermSchema } from '@/lib/validation/key-term.schema'
 import { MAX_CUSTOM_TERMS } from '@/lib/constants'
 
@@ -8,9 +8,9 @@ function err(status: number, code: string, message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const body = await req.json().catch(() => null)
   const parsed = customTermSchema.safeParse(body)
@@ -20,22 +20,20 @@ export async function POST(req: NextRequest) {
 
   const { contract_id, term_name } = parsed.data
 
-  // Verify ownership
   const { data: contract } = await supabase
     .from('contracts')
     .select('id')
     .eq('id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (!contract) return err(403, 'FORBIDDEN', 'Contract does not belong to this user.')
 
-  // Enforce max 5 custom terms
   const { count } = await supabase
     .from('custom_key_terms')
     .select('id', { count: 'exact', head: true })
     .eq('contract_id', contract_id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
 
   if ((count ?? 0) >= MAX_CUSTOM_TERMS) {
     return err(400, 'TOO_MANY_CUSTOM_TERMS', `Maximum ${MAX_CUSTOM_TERMS} custom terms allowed.`)
@@ -43,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   const { data: term, error: dbError } = await supabase
     .from('custom_key_terms')
-    .insert({ contract_id, user_id: session.user.id, term_name })
+    .insert({ contract_id, user_id: user.id, term_name })
     .select('id, term_name')
     .single()
 
@@ -53,9 +51,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const supabase = createRouteClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return err(401, 'UNAUTHORIZED', 'Authentication required.')
+  const auth = await requireAuth()
+  if (auth.response) return auth.response
+  const { user, supabase } = auth
 
   const { id } = await req.json().catch(() => ({ id: null }))
   if (!id) return err(400, 'INVALID_INPUT', 'id is required.')
@@ -64,7 +62,7 @@ export async function DELETE(req: NextRequest) {
     .from('custom_key_terms')
     .delete()
     .eq('id', id)
-    .eq('user_id', session.user.id)
+    .eq('user_id', user.id)
 
   if (dbError) return err(500, 'INTERNAL_ERROR', 'Failed to delete custom term.')
 
