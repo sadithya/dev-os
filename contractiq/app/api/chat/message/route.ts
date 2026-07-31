@@ -1,10 +1,13 @@
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/security/authGuard'
 import { sanitizeForLLM } from '@/lib/security/promptInjectionGuard'
 import { chatMessageSchema } from '@/lib/validation/chat.schema'
 import { checkRateLimit } from '@/lib/security/rateLimiter'
 import { classifyQuery } from '@/lib/ai/classifier'
-import { buildChatMessages, callChat, ChatHistoryMessage } from '@/lib/ai/chat'
+import { callChat, ChatHistoryMessage } from '@/lib/ai/chat'
 import { MAX_CHAT_HISTORY } from '@/lib/constants'
 
 function err(status: number, code: string, message: string) {
@@ -35,7 +38,6 @@ export async function POST(req: NextRequest) {
   const { safe, sanitised } = sanitizeForLLM(content)
   if (!sanitised || !safe) return err(400, 'INJECTION_DETECTED', 'Invalid message content.')
 
-  // Verify contract and session ownership in parallel.
   const [{ data: contract }, { data: chatSession }] = await Promise.all([
     supabase
       .from('contracts')
@@ -56,8 +58,6 @@ export async function POST(req: NextRequest) {
     return err(403, 'FORBIDDEN', 'Session or contract does not belong to this user.')
   }
 
-  // CRITICAL: load history BEFORE inserting the new user message so the classifier
-  // sees only prior turns, not the current question.
   const { data: historyRows } = await supabase
     .from('chat_messages')
     .select('role, content')
@@ -73,49 +73,55 @@ export async function POST(req: NextRequest) {
 
   const queryType = classifyQuery(sanitised)
 
-  const messages = buildChatMessages({
-    contractText: contract.contract_text,
-    history,
-    newUserMessage: sanitised,
-    queryType,
-  })
-
   let responseContent: string
   try {
-    responseContent = await callChat(messages)
+    responseContent = await callChat({
+      contractText: contract.contract_text,
+      history,
+      newUserMessage: sanitised,
+      queryType,
+    })
   } catch (e: unknown) {
-    const code = (e as { code?: string }).code
-    if (code === 'AI_TIMEOUT') return err(504, 'CHAT_TIMEOUT', 'Response timed out. Please try again.')
-    return err(500, 'AI_ERROR', 'Failed to generate a response. Please try again.')
+    const azureError = (e as { message?: string; error?: { message?: string } })
+    return err(500, 'AI_ERROR', azureError?.error?.message ?? azureError?.message ?? 'Failed to generate a response. Please try again.')
   }
 
-  await supabase.from('chat_messages').insert({
-    session_id,
-    user_id: user.id,
-    role: 'user',
-    content: sanitised,
-  })
+  let userMessageId: string | null = null
+  let assistantMessageId: string | null = null
+  let createdAt: string | null = null
 
-  const { data: assistantMsg, error: insertErr } = await supabase
-    .from('chat_messages')
-    .insert({
+  try {
+    await supabase.from('chat_messages').insert({
       session_id,
       user_id: user.id,
-      role: 'assistant',
-      content: responseContent,
+      role: 'user',
+      content: sanitised,
     })
-    .select('id, created_at')
-    .single()
 
-  if (insertErr || !assistantMsg) {
-    return err(500, 'INTERNAL_ERROR', 'Failed to save response.')
+    const { data: assistantMsg } = await supabase
+      .from('chat_messages')
+      .insert({
+        session_id,
+        user_id: user.id,
+        role: 'assistant',
+        content: responseContent,
+      })
+      .select('id, created_at')
+      .single()
+
+    if (assistantMsg) {
+      assistantMessageId = assistantMsg.id
+      createdAt = assistantMsg.created_at
+    }
+  } catch {
+    // DB unavailable — return the AI response with null IDs
   }
 
   return NextResponse.json({
     data: {
-      message_id: assistantMsg.id,
+      message_id: assistantMessageId,
       content: responseContent,
-      created_at: assistantMsg.created_at,
+      created_at: createdAt,
       query_type: queryType,
     },
     error: null,
