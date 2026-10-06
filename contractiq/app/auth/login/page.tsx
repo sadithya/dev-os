@@ -3,13 +3,12 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, type FormEvent, Suspense } from 'react'
-import { createBrowserClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 
-function mapAuthError(message: string): string {
-  if (message.includes('Invalid login credentials')) return 'Invalid email or password.'
-  if (message.includes('Email not confirmed')) return 'Please verify your email before signing in.'
+function mapAuthError(code: string): string {
+  if (code === 'INVALID_CREDENTIALS') return 'Invalid email or password.'
+  if (code === 'EMAIL_NOT_CONFIRMED') return 'Please verify your email before signing in.'
   return 'Something went wrong. Please try again.'
 }
 
@@ -23,24 +22,32 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const supabase = createBrowserClient()
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const json = await res.json()
 
-    if (authError) {
-      setError(mapAuthError(authError.message))
+      if (!res.ok) {
+        setError(mapAuthError(json.error?.code ?? ''))
+        setLoading(false)
+        return
+      }
+
+      const safePath = next.startsWith('/') ? next : '/dashboard'
+      router.push(safePath)
+      router.refresh()
+    } catch {
+      setError('Something went wrong. Please try again.')
       setLoading(false)
-      return
     }
-
-    const safePath = next.startsWith('/') ? next : '/dashboard'
-    router.push(safePath)
-    router.refresh()
   }
 
   return (

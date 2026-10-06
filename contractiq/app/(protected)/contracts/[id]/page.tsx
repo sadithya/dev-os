@@ -1,5 +1,4 @@
 import { notFound, redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
 import { createPageClient } from '@/lib/supabase/server'
 import { ResultsClient } from '@/components/contracts/ResultsClient'
 import { createAdminClient } from '@/lib/supabase/server'

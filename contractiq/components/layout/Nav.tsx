@@ -23,6 +23,9 @@ export function Nav() {
 
   const handleSignOut = async () => {
     setSigningOut(true)
+    // Server-side sign-out clears httpOnly session cookies reliably.
+    // Client-side signOut clears in-memory state so onAuthStateChange fires.
+    await fetch('/api/auth/logout', { method: 'POST' })
     await supabase.auth.signOut()
     router.push('/')
     router.refresh()

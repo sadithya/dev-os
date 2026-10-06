@@ -182,9 +182,11 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_contract_id
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id_created_at
   ON public.chat_messages (session_id, created_at ASC);
 
--- user_feedback
-CREATE INDEX IF NOT EXISTS idx_user_feedback_contract_id
-  ON public.user_feedback (contract_id);
+-- user_feedback — duplicate-check query filters on (contract_id, user_id)
+-- The UNIQUE constraint also creates an implicit index, but an explicit
+-- composite index ensures the planner uses the optimal path.
+CREATE INDEX IF NOT EXISTS idx_user_feedback_contract_user
+  ON public.user_feedback (contract_id, user_id);
 
 -- rate_limit_events — sliding-window COUNT query + pruning DELETE
 CREATE INDEX IF NOT EXISTS idx_rate_limit_events_user_endpoint_created
@@ -433,7 +435,20 @@ FROM storage.buckets
 WHERE id = 'contracts';
 
 -- Storage policies (should be 3 rows)
-SELECT name, operation
-FROM storage.policies
-WHERE bucket_id = 'contracts'
-ORDER BY operation;
+SELECT policyname, cmd
+FROM pg_policies
+WHERE schemaname = 'storage'
+  AND tablename = 'objects'
+ORDER BY cmd;
+
+-- Unique constraints (chat_sessions.contract_id, user_feedback.(contract_id,user_id))
+SELECT tc.table_name, tc.constraint_name,
+       string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) AS columns
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name
+  AND tc.table_schema   = kcu.table_schema
+WHERE tc.table_schema   = 'public'
+  AND tc.constraint_type = 'UNIQUE'
+GROUP BY tc.table_name, tc.constraint_name
+ORDER BY tc.table_name;

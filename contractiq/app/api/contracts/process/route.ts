@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/security/authGuard'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
 import { processSchema } from '@/lib/validation/process.schema'
 import { runExtraction } from '@/lib/ai/extraction'
 import { checkRateLimit } from '@/lib/security/rateLimiter'
