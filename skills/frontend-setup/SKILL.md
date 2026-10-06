@@ -1,7 +1,7 @@
 ---
 name: frontend-setup
 description: >
-  Scaffolds a complete Next.js 14 (App Router) project by writing all necessary
+  Scaffolds a complete Next.js 14 (App Router) project with TypeScript by writing all necessary
   files, creates a styled landing page, and runs the app end to end.
   Use this skill whenever the user asks to:
   - Set up a Next.js project or folder structure
@@ -18,13 +18,35 @@ description: >
 Your job is to scaffold a complete Next.js 14 (App Router) project end to end
 by writing all files manually, then guiding the user to start the dev server.
 
+**Default stack: Next.js 14 + TypeScript.** If the PRD specifies a different tech stack, confirm with the user before using it. Never switch stacks silently.
+
 Do every step in order. Do not skip any step.
 
 ---
 
-## Step 1 — Ask the user about the project folder
+## Step 1 — Check the PRD / Engineering Doc for stack overrides
 
-Before creating anything, use the `AskUserQuestion` tool to ask the user:
+Before asking the user anything, read `docs/engineering/engineering-doc.md` if it exists. Look for:
+- Framework preference (Next.js version, Remix, Vite, etc.)
+- Language preference (TypeScript vs JavaScript)
+- Any additional dependencies called out (UI library, state management, etc.)
+
+Then follow this decision tree:
+
+**If the PRD specifies a different tech stack** (e.g. JavaScript instead of TypeScript, Vite instead of Next.js, a different framework):
+- Use `AskUserQuestion` to confirm with the user before proceeding:
+  - **Question:** "The PRD specifies [X]. Would you like to use that, or stick with the default (Next.js 14 + TypeScript)?"
+  - **Options:** "Use [X] from the PRD" / "Use the default (Next.js 14 + TypeScript)"
+- Use whichever option the user picks and apply it throughout all steps below.
+
+**If the PRD is silent or does not exist:**
+- Use the defaults: **Next.js 14, TypeScript**. No need to ask the user anything about the stack.
+
+---
+
+## Step 2 — Ask the user about the project folder
+
+Use the `AskUserQuestion` tool to ask the user:
 
 **Question:** "Where would you like to set up the Next.js project?"
 **Header:** "Project folder"
@@ -38,15 +60,15 @@ If they choose **Use an existing folder**: ask them to provide the path, then us
 
 ---
 
-## Step 2 — Set up the project folder
+## Step 3 — Set up the project folder
 
-Based on the user's answer from Step 1:
+Based on the user's answer from Step 2:
 - **New folder**: Create `nextjs-app/` and `nextjs-app/app/` inside the outputs directory.
 - **Existing folder**: Use the path they provided; create an `app/` subfolder inside it if it doesn't exist.
 
 ---
 
-## Step 3 — Write `package.json`
+## Step 4 — Write `package.json`
 
 ```json
 {
@@ -67,14 +89,45 @@ Based on the user's answer from Step 1:
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
-    "@types/react-dom": "^18"
+    "@types/react-dom": "^18",
+    "typescript": "^5"
   }
 }
 ```
 
 ---
 
-## Step 4 — Write `next.config.mjs`
+## Step 5 — Write `tsconfig.json`
+
+```json
+{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+```
+
+---
+
+## Step 6 — Write `next.config.mjs`
 
 ```js
 /** @type {import('next').NextConfig} */
@@ -85,15 +138,21 @@ export default nextConfig;
 
 ---
 
-## Step 5 — Write `app/layout.jsx`
+## Step 7 — Write `app/layout.tsx`
 
-```jsx
-export const metadata = {
+```tsx
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
   title: 'Next.js App',
   description: 'Built with Next.js 14 App Router',
 }
 
-export default function RootLayout({ children }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="en">
       <body style={{ margin: 0, padding: 0, fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
@@ -106,9 +165,9 @@ export default function RootLayout({ children }) {
 
 ---
 
-## Step 6 — Write `app/globals.css`
+## Step 8 — Write `app/globals.css`
 
-Include hover classes here so `page.jsx` never needs JS event handlers (which crash in Server Components).
+Include hover classes here so `page.tsx` never needs JS event handlers (which crash in Server Components).
 
 ```css
 * {
@@ -151,14 +210,14 @@ body {
 
 ---
 
-## Step 7 — Write `app/page.jsx` (the landing page)
+## Step 9 — Write `app/page.tsx` (the landing page)
 
-> **IMPORTANT — Server Component rule:** `app/page.jsx` is a React Server Component by default in Next.js 14.
+> **IMPORTANT — Server Component rule:** `app/page.tsx` is a React Server Component by default in Next.js 14.
 > Never use `onMouseOver`, `onMouseOut`, `onClick`, or any other JS event handler props on elements here.
 > Those props are only valid in Client Components (`'use client'`).
 > Use CSS classes from `globals.css` for all hover and interactive effects instead.
 
-```jsx
+```tsx
 import './globals.css'
 
 export default function Home() {
@@ -182,7 +241,7 @@ export default function Home() {
         WebkitBackgroundClip: 'text',
         WebkitTextFillColor: 'transparent',
       }}>
-        Hello, Next.js 🚀
+        Hello, Next.js
       </h1>
       <p style={{
         fontSize: '1.25rem',
@@ -191,9 +250,8 @@ export default function Home() {
         lineHeight: 1.8,
         marginBottom: '2rem',
       }}>
-        Your Next.js 14 app is up and running with the App Router. Let's build something amazing.
+        Your Next.js 14 app is up and running with the App Router and TypeScript. Let's build something amazing.
       </p>
-      {/* Use className for hover — never onMouseOver in a Server Component */}
       <a
         href="https://nextjs.org/docs"
         target="_blank"
@@ -206,25 +264,27 @@ export default function Home() {
   )
 }
 ```
+
 ---
 
-## Step 8 — Show the final folder structure
+## Step 10 — Show the final folder structure
 
 Tell the user what was created:
 
 ```
 nextjs-app/
 ├── next.config.mjs
-├── package.json       ← Supabase credentials (fill in your values)
+├── package.json
+├── tsconfig.json
 └── app/
-    ├── layout.jsx      ← root layout (metadata, html/body tags)
+    ├── layout.tsx      ← root layout (metadata, html/body tags)
     ├── globals.css     ← global styles
-    └── page.jsx        ← your landing page
+    └── page.tsx        ← your landing page
 ```
 
 ---
 
-## Step 9 — Run the app (end to end)
+## Step 11 — Run the app (end to end)
 
 Run it in the background:
 
@@ -234,7 +294,7 @@ sleep 8 && cat /tmp/nextjs-app.log
 ```
 
 **If the server starts successfully**, tell the user:
-> ✅ Your Next.js app is live at **http://localhost:3000** — open it in your browser!
+> Your Next.js app is live at **http://localhost:3000** — open it in your browser!
 
 **If npm is blocked or the server fails**, give the user these commands to run in their own terminal:
 
@@ -246,16 +306,14 @@ npm install && npm run dev
 Then tell them:
 > Once it starts, open **http://localhost:3000** in your browser to see the landing page.
 
-Either way, the user ends up with a running Next.js app. Keep the tone encouraging — this is a lesson context.
-
 ---
 
 ## Notes
 
+- **TypeScript is hardcoded.** All files always use `.tsx` / `.ts`. Never use `.jsx` or `.js` regardless of what the PRD or user requests.
 - If the project folder already exists, delete it and start fresh.
 - Replace `<project-path>` with the actual absolute path to the project directory.
 - Port 3000 is Next.js's default. If it's in use, try 3001.
 - This scaffold uses the **App Router** (`app/` directory), which is the modern default since Next.js 13+. Do NOT use the old `pages/` directory unless the user explicitly asks.
 - Do NOT explain every file in detail — just confirm each one was written, then move on.
-- TypeScript is intentionally omitted to keep things simple for beginners. If the user asks for TypeScript, rename files to `.tsx`/`.ts` and add a `tsconfig.json`.
-- **NEVER use JS event handler props (`onMouseOver`, `onMouseOut`, `onClick`, etc.) in `app/page.jsx` or any other Server Component.** Next.js App Router files are Server Components by default — passing event handlers to them throws a build error: _"Event handlers cannot be passed to Client Component props."_ Always use CSS classes from `globals.css` for hover and interactive effects in Server Components. Only add `'use client'` at the top of a file when the component genuinely needs React state, effects, or browser event handlers.
+- **NEVER use JS event handler props (`onMouseOver`, `onMouseOut`, `onClick`, etc.) in `app/page.tsx` or any other Server Component.** Next.js App Router files are Server Components by default — passing event handlers to them throws a build error: _"Event handlers cannot be passed to Client Component props."_ Always use CSS classes from `globals.css` for hover and interactive effects in Server Components. Only add `'use client'` at the top of a file when the component genuinely needs React state, effects, or browser event handlers.
