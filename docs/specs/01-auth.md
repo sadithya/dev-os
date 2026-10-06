@@ -36,17 +36,17 @@ Authed user visits /auth/*:
 
 | File | Action | Notes |
 |---|---|---|
-| `app/(auth)/login/page.jsx` | Implement | Full login form with Supabase integration |
-| `app/(auth)/signup/page.jsx` | Implement | Full signup form with Supabase integration |
-| `components/layout/Nav.jsx` | Create | Top nav: logo, Sign In / Get Started / Sign Out |
+| `app/auth/login/page.tsx` | Implement | Full login form with Supabase integration |
+| `app/auth/signup/page.tsx` | Implement | Full signup form with Supabase integration |
+| `components/layout/Nav.tsx` | Create | Top nav: logo, Sign In / Get Started / Sign Out |
 | `middleware.ts` | Already scaffolded | Verify logic covers all protected paths |
-| `lib/supabase/client.ts` | Already scaffolded | Browser client |
+| `lib/supabase/client.ts` | Already scaffolded | Browser client (`createBrowserClient`) |
 
 ---
 
 ## Component Specs
 
-### `app/(auth)/login/page.jsx`
+### `app/auth/login/page.tsx`
 
 ```
 'use client'
@@ -59,9 +59,10 @@ State:
 
 On submit:
   1. setLoading(true), setError(null)
-  2. const { error } = await supabase.auth.signInWithPassword({ email, password })
-  3. If error → setError(mapAuthError(error.message))
-  4. If success → router.push('/dashboard')
+  2. const supabase = createBrowserClient()
+  3. const { error } = await supabase.auth.signInWithPassword({ email, password })
+  4. If error → setError(mapAuthError(error.message))
+  5. If success → router.push(searchParams.get('next') || '/dashboard')
 
 Error mapping:
   'Invalid login credentials' → 'Invalid email or password.'
@@ -75,9 +76,12 @@ Inline validation (onBlur, not onSubmit):
 Fields: email (type="email"), password (type="password")
 Button: "Sign In" — disabled while loading; shows Spinner when loading
 Link: "Don't have an account? Get started free" → /auth/signup
+
+?next param: read via useSearchParams(); used in router.push after success
+Security: only redirect to relative paths starting with "/" — reject external URLs
 ```
 
-### `app/(auth)/signup/page.jsx`
+### `app/auth/signup/page.tsx`
 
 ```
 'use client'
@@ -92,9 +96,10 @@ State:
 On submit:
   1. Client validate: password.length >= 8
   2. setLoading(true), setError(null)
-  3. const { error } = await supabase.auth.signUp({ email, password })
-  4. If error.message includes 'already registered' → setError('An account with this email already exists. Sign in instead.')
-  5. If success → setSuccess(true) — show "Check your email for a verification link."
+  3. const supabase = createBrowserClient()
+  4. const { error } = await supabase.auth.signUp({ email, password })
+  5. If error.message includes 'already registered' → setError('An account with this email already exists. Sign in instead.')
+  6. If success → setSuccess(true) — show "Check your email for a verification link."
 
 Fields: email (type="email"), password (type="password", minLength hint: "At least 8 characters")
 Button: "Create Account" — disabled while loading
@@ -105,14 +110,18 @@ Success state (replaces form):
   "Check your inbox — we sent a verification link to {email}."
 ```
 
-### `components/layout/Nav.jsx`
+### `components/layout/Nav.tsx`
 
 ```
 'use client'
 
-Props: none (reads session from Supabase hook)
+Props: none (reads session client-side)
 
-Uses: createClientComponentClient() + useEffect to listen to auth state
+Uses: createBrowserClient() + useEffect + supabase.auth.onAuthStateChange() to
+      react to sign-in/sign-out events without a page refresh.
+
+State:
+  isAuthed: boolean (derived from session)
 
 Renders:
   Left: "ContractIQ" logo → links to /
@@ -123,7 +132,7 @@ Sign Out handler:
   await supabase.auth.signOut()
   router.push('/')
 
-Styling: white bg, border-bottom 1px solid grey-100, height 64px, sticky top-0 z-50
+Styling: white bg, border-bottom 1px solid grey-100 (#DADADB), height 64px, sticky top-0 z-50
 ```
 
 ---

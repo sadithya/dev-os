@@ -1,9 +1,14 @@
 # ContractIQ — Engineering Document
 
-**Version:** 1.0  
-**Date:** 2026-07-14  
-**Status:** Draft — Awaiting Approval  
+**Version:** 1.0
+**Date:** 2026-10-05
+**Status:** Approved
 **PRD Source:** `docs/ContractIQ_PRD.md`
+**Spec Sources:** `docs/specs/01-auth.md` through `docs/specs/09-shared-ui-components.md`
+**SQL Schema:** `docs/specs/supabase-schema.sql`
+
+> This document is the authoritative technical reference for the ContractIQ engineering team.
+> No implementation begins without approval of the relevant section.
 
 ---
 
@@ -22,100 +27,97 @@
 11. [Folder Structure](#11-folder-structure)
 12. [Naming Conventions](#12-naming-conventions)
 13. [Testing Strategy](#13-testing-strategy)
-14. [Specs-to-Implementation Mapping](#14-specs-to-implementation-mapping)
+14. [Specs to Implementation Mapping](#14-specs-to-implementation-mapping)
 
 ---
 
 ## 1. Executive Summary
 
-**Product:** ContractIQ  
-**Version:** MVP (v0.1–v1.0)  
+**Project Name:** ContractIQ
 
-### Business Goal
+**Business Goal:** Reduce NDA and MSA contract review time for SMBs from 90–120 minutes to ≤15 minutes by automatically extracting key terms with page-level attribution, confidence scoring, and a plain-English Q&A interface — eliminating the need for in-house legal expertise at review time.
 
-Reduce NDA and MSA contract review time for SMBs from 90–120 minutes to ≤15 minutes by automatically extracting key terms, providing page-level attribution, confidence scoring, and plain-English Q&A — without requiring in-house legal expertise.
+**Problem Statement:** Founders, operations managers, and procurement leads at companies with 5–250 employees routinely sign NDAs and MSAs without fully understanding the terms. A single contract review consumes 90–120 minutes and requires legal expertise most SMBs don't have, leading to missed auto-renewal clauses, unfavourable indemnification limits, and IP assignment obligations. Enterprise tools (DocuSign CLM, Ironclad, Kira) cost $50k–$500k/year and are built for legal departments. Generic AI (ChatGPT) lacks structured extraction, page attribution, confidence scoring, and contract-type-specific term libraries.
 
-### Problem Statement
-
-Business professionals at companies with 5–250 employees routinely sign NDAs and MSAs without fully understanding the terms. Without legal teams, a single contract review takes 90–120 minutes, requires expertise most SMBs don't have, and results in missed obligations, unfavourable terms, or costly disputes. Existing enterprise tools (DocuSign CLM, Ironclad, Kira) cost $50k–$500k/year. Generic AI (ChatGPT) lacks structured extraction, page attribution, confidence scoring, and contract-type-specific term libraries.
-
-### Target Users
-
-- **Primary:** Founders, COOs, Procurement Managers at 5–250 person companies (no legal team); sign 5–15 NDAs/MSAs per month
-- **Secondary:** Freelancers and consultants signing client MSAs; receive 1–4 MSAs/month; cannot afford legal review
+**Target Users:**
+- **Primary:** Founders, COOs, Procurement Managers at 5–250 person companies with no legal team; signing 5–15 NDAs/MSAs per month
+- **Secondary:** Freelancers and consultants receiving 1–4 MSAs per month from larger clients; cannot afford legal review
 
 ### Success Criteria
 
 | Metric | Target |
 |---|---|
-| North Star — time from upload to completed key-term review | ≤ 15 minutes |
-| Key-term extraction accuracy (F1, NDA) | ≥ 88% |
-| Key-term extraction accuracy (F1, MSA) | ≥ 85% |
-| Extraction latency (upload → results panel) P95 | ≤ 30 seconds |
+| North Star — upload to completed key-term review | ≤ 15 minutes |
+| Key-term extraction accuracy F1 (NDA) | ≥ 88% |
+| Key-term extraction accuracy F1 (MSA) | ≥ 85% |
+| Extraction latency P95 (upload → results panel rendered) | ≤ 30 seconds |
 | Chat response latency P95 | ≤ 15 seconds |
 | Cost per 20-page contract analysis | ≤ $0.25 |
 | 30-day user retention | ≥ 45% |
 | AI extraction correction rate | ≤ 12% of terms |
+| NPS | ≥ 40 |
 
-### Tech Stack
+### Tech Stack Summary
 
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 14 (App Router), React 18, Tailwind CSS |
-| Backend | Next.js 14 API Routes (Vercel serverless) |
-| Database + Auth + Storage | Supabase (PostgreSQL, Supabase Auth, Supabase Storage) |
-| AI / LLM | OpenAI GPT-4o (JSON mode, 128k context) |
-| PDF Parsing | pdf-parse (Node.js, server-side) |
-| PDF Rendering | PDF.js (client-side) |
-| Schema Validation | Zod |
-| Icons | Lucide React |
-| Fonts | Inter (body), JetBrains Mono (contract text) |
-| Hosting | Vercel (frontend + API routes) |
+| Layer | Technology | Version |
+|---|---|---|
+| Frontend | Next.js App Router, React, Tailwind CSS | Next.js 14.2.5, React 18.3.1 |
+| API Layer | Next.js API Routes (Node.js runtime) | Next.js 14.2.5 |
+| Database + Auth + Storage | Supabase (PostgreSQL 15, Supabase Auth, Supabase Storage) | @supabase/supabase-js 2.44.3 |
+| AI / LLM | OpenAI GPT-4o (JSON mode, 128k context) | openai 4.52.0 |
+| PDF Parsing | pdf-parse (Node.js, server-side only) | 1.1.1 |
+| PDF Rendering | PDF.js (pdfjs-dist, client-side) | 4.3.136 |
+| Schema Validation | Zod | 3.23.8 |
+| Icons | Lucide React | 0.400.0 |
+| Hosting | Netlify (frontend + API routes via @netlify/plugin-nextjs) | — |
 
 ---
 
 ## 2. Product Scope
 
-### In Scope (MVP)
+### In Scope (MVP v0.1–v1.0)
 
-- Email/password authentication via Supabase Auth
-- PDF upload (≤10 MB, ≤20 pages, text-layer PDFs only)
-- Server-side text extraction with `[PAGE N]` markers; stored once in DB; reused for all downstream processing
-- Standard key-term extraction for NDA (10 terms) and MSA (12 terms) via GPT-4o
-- Up to 5 custom key terms per analysis, added before processing
-- Confidence scoring per extracted term (0–100%), colour-coded (green ≥ 80%, amber 50–79%, red < 50%)
-- Page-level attribution per term; expandable source sentence ("Why?" section)
-- Low-confidence (< 50%) flagging with ⚠️ icon and non-dismissible tooltip
-- Inline PDF viewer using PDF.js (signed URL from Supabase Storage)
-- Text-viewer fallback (parses `[PAGE N]` markers from DB) when Storage is unavailable
-- Click-to-navigate from key-terms panel to corresponding PDF page
-- Contract chat: Q&A grounded strictly in the uploaded document (GPT-4o, full context, page citation required)
-- Persistent chat history per contract (stored in Supabase, loaded on page revisit)
-- Dashboard: total contracts, breakdown by type, sortable contract list
-- Inline key-term editing with "Edited" badge; original AI value preserved
-- Feedback submission: thumbs up/down + optional comment per contract review
+- Email/password authentication (sign up, sign in, sign out, session persistence) via Supabase Auth
+- PDF upload: ≤10 MB, ≤20 pages, text-layer PDFs only; rejection of scanned PDFs (< 100 words extracted) and oversized contracts (> 15,000 tokens)
+- Server-side text extraction with `[PAGE N]` markers using pdf-parse; stored once in `contracts.contract_text`; reused by all downstream pipelines without re-downloading the PDF
+- Standard key-term extraction: 10 terms for NDA, 12 terms for MSA, via GPT-4o with few-shot prompting
+- Up to 5 custom key terms per analysis, added before processing and appended zero-shot to the extraction prompt
+- Confidence scoring (0–100%) per extracted term; colour-coded green/amber/red; ⚠️ warning + non-dismissible tooltip for confidence < 50%
+- Page-level attribution (1-indexed) per term; expandable source sentence (verbatim, "Why?" section)
+- Inline PDF viewer using PDF.js with signed URL (1-hour expiry) from Supabase Storage
+- Text-viewer fallback: parses `[PAGE N]` markers from `contract_text` when Storage is unavailable; both viewers respond identically to `targetPage` prop
+- Click-to-navigate from key-terms panel to corresponding page in the active viewer
+- Contract chat: document-grounded Q&A via GPT-4o; full contract context on every turn; mandatory `[Page X]` citation; "I cannot find this in the document" fallback
+- Persistent chat history per contract; stored in Supabase; rehydrated on page revisit
+- Dashboard: total contracts, NDA/MSA counts, sortable/clickable contract list
+- Inline key-term editing with "Edited" badge; original `ai_value` preserved in DB
+- Feedback: thumbs up/down + optional comment per contract review (P2)
 - "Not legal advice" disclaimer on every results page
-- Supabase RLS enforced on all tables and Storage bucket
+- Supabase RLS enforced on all 7 tables and the Storage bucket
+- Rate limiting: 20 extraction calls/user/hour; 60 chat calls/user/hour (sliding window via `rate_limit_events` table)
+- Prompt injection sanitisation on all chat inputs
 
 ### Out of Scope (MVP)
 
 - Scanned/image PDFs (OCR) — graceful error shown; planned v1.2
 - Non-English contracts or non-US/UK legal conventions
-- Export to CSV or PDF — P2 backlog, planned v1.1
+- Export to CSV or PDF report — planned v1.1
 - Batch contract upload — planned v1.1
 - Multi-user workspaces / team plans — planned v1.2
 - Contract comparison view — planned v1.2
-- Fine-tuning or model training on user data
-- Email notifications — planned v1.2
+- Fine-tuning or training on user data
+- Email notifications on processing completion — planned v1.2
 - Dashboard analytics charts — planned v1.1
+- Chunked RAG for contracts > 15,000 tokens — post-v1.0
+- Stripe or payment integration
 
 ### Future Enhancements
 
 | Version | Feature |
 |---|---|
-| v1.1 | Export key terms (CSV + PDF), batch upload (up to 5), dashboard charts |
-| v1.2 | OCR for scanned PDFs (AWS Textract), contract comparison, email notifications, team workspaces |
-| Post-v1.0 | Chunked RAG for contracts > 15,000 tokens, jurisdiction-specific prompt variants, non-English support |
+| v1.1 | Export key terms (CSV + PDF), batch upload (up to 5), dashboard analytics charts, onboarding tooltips |
+| v1.2 | OCR for scanned PDFs (AWS Textract or equivalent), contract comparison, email notifications, team workspaces |
+| Post-v1.0 | Chunked RAG for contracts > 15,000 tokens, jurisdiction-specific prompt variants, non-English support, fine-tuning on correction data |
 
 ---
 
@@ -129,190 +131,287 @@ Business professionals at companies with 5–250 employees routinely sign NDAs a
 | Company size | 5–250 employees; no in-house legal counsel |
 | Industries | SaaS, agency, professional services, fintech, e-commerce |
 | Contract volume | Signs 5–15 NDAs or MSAs per month |
-| Current behaviour | Google searches, ad-hoc legal consultations ($250–$500/hr) |
-| Primary pain | 90–120 min per review; misses auto-renewal, indemnification, IP assignment clauses |
-| Technical comfort | Comfortable with web tools; not a lawyer |
+| Current behaviour | Google searches, ad-hoc legal consultations at $250–$500/hour |
+| Primary pain | 90–120 minutes per review; routinely misses auto-renewal clauses, indemnification limits, IP assignment |
+| Technical comfort | Comfortable with web tools; not a lawyer; may not know what "indemnification" means |
 
-**Permissions:** Full access — upload, review, edit terms, chat, view dashboard
+**Permissions:** Full access — upload, review, edit terms, chat, view dashboard, submit feedback, delete contracts.
 
 **Primary workflows:**
-1. Upload contract → view extracted key terms → verify low-confidence terms → chat for clarification
-2. Revisit dashboard to track contract history and retrieve past reviews
-
----
+1. Upload contract → view extracted key terms → verify low-confidence terms directly in PDF → use chat for clarification → save review
+2. Return to dashboard → retrieve past reviews → reopen chat session for a specific contract
 
 ### Persona 2 — The Freelancer / Consultant (Secondary)
 
 | Attribute | Detail |
 |---|---|
 | Roles | Designer, developer, marketer, consultant |
-| Contract volume | Receives 1–4 MSAs/month from larger clients |
-| Current behaviour | Signs without reading carefully due to power imbalance |
+| Contract volume | Receives 1–4 MSAs per month from larger clients |
+| Current behaviour | Signs without reading carefully because the power imbalance discourages pushback |
 | Primary pain | Cannot afford legal review; unsure which clauses are non-standard or risky |
-| Technical comfort | Moderate; needs plain-English explanations of legal terms |
+| Technical comfort | Moderate; needs plain-English explanations of legal terms throughout the UI |
 
-**Permissions:** Same as Primary (single user tier at MVP)
+**Permissions:** Identical to Primary (single user tier at MVP).
 
-**Primary workflows:**
-1. Upload client MSA → scan key terms for red flags → use chat to understand risky clauses
+**Primary workflow:** Upload client MSA → scan confidence-flagged terms → use chat to understand unusual clauses → export summary for reference (v1.1).
 
 ---
 
 ## 4. User Flows
 
-All flows follow the format:
+All flows use the format:
 ```
 User Action → Frontend Behaviour → Backend Processing → Database Interaction → System Response
 ```
 
----
-
-### Flow 1 — New Visitor → Sign Up → Dashboard
+### Flow 1 — New Visitor Sign Up → Dashboard
 
 ```
-User clicks "Get Started Free" on landing page
-  → Frontend renders Supabase Auth sign-up modal (email + password)
-  → Supabase Auth: createUser (email/password)
-  → Supabase inserts row in auth.users; session token returned
-  → Frontend receives session; redirects to /dashboard
-  → Dashboard renders empty state: "No contracts reviewed yet — upload your first contract to begin"
+User clicks "Get Started Free" on landing page (/)
+  → Frontend navigates to /auth/signup
+  → User enters email + password → submits form
+  → Frontend calls supabase.auth.signUp({ email, password })
+    → Supabase Auth: creates auth.users row; sends verification email
+  → Frontend shows success state: "Check your inbox for a verification link to {email}"
+  → User clicks verification link → Supabase establishes session; cookie stored in browser
+  → middleware.ts reads session → allows access to /dashboard
+  → /dashboard renders empty state: "No contracts reviewed yet — upload your first contract to begin"
+  → "Review a Contract" CTA links to /upload
 ```
 
-**Steps:**
-1. Landing page (`/`) — hero, value prop, demo GIF, CTAs: "Sign In" / "Get Started Free"
-2. "Get Started Free" → renders `/auth/signup`
-3. User submits email + password → Supabase Auth `signUp()` → email verification sent
-4. On verification completion → session established → redirect to `/dashboard`
-5. Dashboard empty state shown; "Review a Contract" CTA prominent
-
-**Error states:**
+**Error handling:**
 - Duplicate email → "An account with this email already exists. Sign in instead."
-- Weak password → inline validation before submission
-- Network error → toast: "Something went wrong. Please try again."
+- Password < 8 chars → inline client-side validation before API call
+- Network error → "Something went wrong. Please try again."
 
----
-
-### Flow 2 — Returning User → Sign In → Dashboard
+### Flow 2 — Returning User Sign In → Dashboard
 
 ```
-User visits / or /auth/login
-  → Frontend renders sign-in form
-  → Supabase Auth: signInWithPassword(email, password)
-  → Session token stored in browser (Supabase managed)
-  → Redirect to /dashboard
-  → Frontend queries contracts table (WHERE user_id = auth.uid()) 
-  → Renders: total count, NDA/MSA breakdown, last 5 contracts (sortable list)
+User visits /auth/login
+  → Frontend renders sign-in form (email + password)
+  → User submits → supabase.auth.signInWithPassword({ email, password })
+    → Supabase Auth validates credentials; returns session
+  → Session stored in browser cookie (Supabase managed)
+  → middleware.ts reads session → allows /dashboard
+  → /dashboard page.tsx (Server Component):
+      SELECT id, file_name, contract_type, status, page_count, created_at
+      FROM contracts WHERE user_id = auth.uid() ORDER BY created_at DESC
+  → StatCard renders: total count, NDA count, MSA count
+  → ContractTable renders: sortable list of all contracts
+  → Clicking any row → router.push('/contracts/{id}')
 ```
 
-**Dashboard data displayed:**
-- Total contracts reviewed (COUNT)
-- Breakdown by type (NDA count / MSA count)
-- Sortable list: contract name, type, date uploaded, status (completed / processing / error)
-- Each row is clickable → opens `/contracts/[id]` (results page)
-
----
+**Error handling:**
+- Invalid credentials → "Invalid email or password." (inline, below password field)
+- Email not confirmed → "Please verify your email before signing in."
+- Session expires mid-session → middleware intercepts next protected fetch → redirect to `/auth/login?next={currentPath}`
 
 ### Flow 3 — Core Contract Review Flow
 
 ```
-User clicks "Review a Contract"
-  → /upload page renders
-  → User selects contract type (NDA / MSA) from dropdown
-  → User drags/drops or file-picks a PDF
-  → Frontend validates file client-side (≤10 MB, .pdf extension)
-  → POST /api/contracts/upload (multipart: file + contract_type)
-    → Server: pdf-parse extracts text with [PAGE N] markers
-    → Server: validates ≥100 words (reject scanned PDF)
-    → Server: validates ≤15,000 tokens (reject oversized)
-    → Server: INSERT INTO contracts (user_id, file_name, contract_type, contract_text, page_count, token_count, status='pending')
-    → Server: non-blocking upload to Supabase Storage at contracts/{user_id}/{contract_id}/{filename}.pdf
-  → Frontend receives { contract_id }
-  → Pre-processing preview renders:
-    - Standard terms list for selected contract type (NDA: 10 terms / MSA: 12 terms)
-    - "+ Add Key Term" input to add custom terms (≤5)
-    - Custom terms shown with "Custom" badge in the preview list
-    - Custom terms saved to custom_key_terms table on add
-  → User clicks "Process Contract"
-  → POST /api/contracts/process { contract_id, custom_terms: [...] }
-    → Server: fetches contracts.contract_text from DB
-    → Server: builds few-shot prompt (NDA or MSA) with standard + custom terms
-    → Server: calls OpenAI GPT-4o (JSON mode, temp 0.1, max 2000 tokens)
-    → Server: parses JSON response → validates schema
-    → Server: INSERT INTO key_terms (one row per term)
-    → Server: UPDATE contracts SET status='completed'
-  → Frontend polls or receives response: key_terms array
-  → Results page (/contracts/[id]) renders:
-    - Left panel: PDF.js viewer (signed URL, 1hr expiry) OR text-viewer fallback
-    - Right panel: key terms list (name / value / page / confidence, colour-coded)
-    - ⚠️ flag on terms with confidence < 50%
-    - Expandable "Why?" section per term (source_sentence)
-    - Floating "Chat with Contract" tab
+User clicks "Review a Contract" → navigates to /upload
 ```
 
-**Processing progress indicator (3 steps):**
-1. Extracting text from PDF
-2. Analysing with AI
-3. Compiling results
+**Step 1 — Configure:**
+```
+User selects contract type from ContractTypeSelector (NDA / MSA)
+User drops/picks PDF file in DropZone
+Client-side validation:
+  - file.name.toLowerCase().endsWith('.pdf') → error if not
+  - file.size <= 10,485,760 bytes → error if larger
+  → If validation fails: inline error shown; no network request made
+```
 
-**Low-confidence handling:**
-- Confidence < 50% → ⚠️ icon + tooltip: "Low confidence — we recommend verifying this in the document directly."
-- PDF viewer auto-highlights nearest matching page span
-- Term is shown (never hidden)
+**Step 2 — Upload:**
+```
+→ POST /api/contracts/upload (multipart/form-data: file + contract_type)
+  Backend:
+    1. requireAuth() → 401 if no session (getUser() validates JWT with Supabase server)
+    2. validateFile(file) → rejects non-PDF, > 10 MB
+    3. uploadBodySchema.safeParse({ contract_type }) → rejects invalid type
+    4. Buffer.from(await file.arrayBuffer())
+    5. extractPDFText(buffer):
+       - pdf-parse with per-page render callback
+       - page texts joined with [PAGE N] markers
+       - pageCount > 20 → throws TOO_MANY_PAGES
+       - wordCount < 100 → throws SCANNED_PDF
+       - tokenCount > 15,000 → throws CONTRACT_TOO_LONG
+    6. INSERT INTO contracts { user_id, file_name, contract_type, contract_text,
+                               page_count, token_count, status: 'pending' }
+    7. Non-blocking: uploadToStorage(buffer, fileName, userId, contractId)
+       .then(filePath => UPDATE contracts SET file_path WHERE id = contractId)
+       .catch(() => { /* silent — text viewer fallback handles null file_path */ })
+    8. Return 201: { contract_id, status: 'pending', page_count, token_count }
+  Frontend: receives contract_id → setProcessingStep(1)
+```
 
----
+**Step 3 — Custom Terms (optional):**
+```
+TermPreviewList renders standard terms for selected type (read-only)
+CustomTermInput allows adding up to 5 custom terms:
+  → POST /api/contracts/custom-terms { contract_id, term_name }
+    → INSERT INTO custom_key_terms
+  → term added to preview list with "Custom" badge
+"Analyse Contract" button enabled
+```
+
+**Step 4 — AI Extraction:**
+```
+User clicks "Analyse Contract" → setStep('processing') → ProcessingProgress stepper (step 2)
+→ POST /api/contracts/process { contract_id, custom_terms: [...] }
+  Backend:
+    1. requireAuth() → 401
+    2. processSchema.safeParse(body) → validates UUID, custom_terms array ≤ 5
+    3. checkRateLimit(user.id, 'contracts/process') → 429 if exceeded
+    4. SELECT contract_text, contract_type FROM contracts
+       WHERE id = contract_id AND user_id = user.id → 404 if not found
+    5. SELECT term_name FROM custom_key_terms WHERE contract_id = contract_id
+    6. Deduplicate: [...dbCustomTerms, ...requestCustomTerms]
+    7. UPDATE contracts SET status = 'processing'
+    8. runExtraction({ contractText, contractType, customTerms }):
+       - Build system prompt (nda-extraction.ts or msa-extraction.ts)
+       - Build user message: contract text + standard term list + custom terms
+       - Call OpenAI GPT-4o (temp 0.1, max 2000 tokens, json_object mode)
+       - Parse JSON → Zod validate
+       - Retry up to 3 times on JSON parse failure with corrective prompt
+       - Throw AI_ERROR after 3 failures
+    9. INSERT INTO key_terms (batch; is_manual = true for custom terms)
+    10. UPDATE contracts SET status = 'completed'
+    11. Return 200: { key_terms: [...] }
+  Frontend: router.push('/contracts/{contractId}')
+```
+
+**Step 5 — Results Page:**
+```
+/contracts/[id]/page.tsx (Server Component):
+  → SELECT contract metadata + contract_text + file_path FROM contracts
+  → UPDATE contracts SET last_accessed_at = now() (non-blocking)
+  → createSignedUrl(file_path, 3600) if file_path not null
+  → SELECT key_terms ORDER BY created_at ASC
+  → SELECT id FROM chat_sessions WHERE contract_id = id
+  → SELECT rating FROM user_feedback WHERE contract_id = id
+  → Passes all data as props to ResultsClient (Client Component)
+ResultsClient:
+  → Two-panel layout: PDF viewer (60%) / Key terms panel (40%)
+  → targetPage state shared between panel and viewers
+  → PDFViewer OR TextViewerFallback (based on signed_url null check)
+  → KeyTermCard × N (name, value, page link, ConfidenceBar, ⚠️ if < 50%, "Why?" expandable)
+  → FeedbackWidget at panel bottom
+  → "Not legal advice" disclaimer always visible
+  → Floating "Chat" tab
+```
 
 ### Flow 4 — Contract Chat (Q&A)
 
 ```
 User clicks "Chat" tab on results page
-  → Chat interface renders (chat_session created if not exists)
-    → POST /api/chat/sessions { contract_id } → INSERT INTO chat_sessions → returns session_id
-  → User types question (e.g. "What happens if I breach the NDA?")
+  → ChatInterface mounts
+  → If no initialSessionId:
+      POST /api/chat/sessions { contract_id }
+        → INSERT INTO chat_sessions ON CONFLICT (contract_id) DO NOTHING
+        → SELECT id FROM chat_sessions WHERE contract_id = ... AND user_id = ...
+      → setSessionId(session_id)
+  → GET /api/chat/{sessionId}/messages
+    → SELECT role, content, created_at FROM chat_messages ORDER BY created_at ASC
+  → Messages array loaded (empty array on first visit)
+  → Empty state shown: "Ask anything about this contract." + 3 suggested questions
+
+User types question and presses Enter or clicks Send:
+  → Message appended optimistically to UI (right-aligned, blue bubble)
+  → inputValue cleared; isLoading = true
   → POST /api/chat/message { contract_id, session_id, content: "..." }
-    → Server: fetches all chat_messages for session (ascending, up to 200)
-    → Server: classifies query (contract / history / both) — inline, no extra API call
-    → Server: builds context: system prompt + contract_text + conversation history
-    → Server: calls OpenAI GPT-4o (temp 0.4, max 1000 tokens)
-    → Server: INSERT INTO chat_messages (user message + assistant response)
-  → Response displayed in chat UI:
-    - User messages: right-aligned
-    - AI responses: left-aligned, prefixed "Based on the document…"
-    - Each AI response includes "[Page X]" citation as a clickable link → scrolls PDF viewer
-  → "I cannot find this in the document" is a valid, expected response
-  → Conversation persists: revisiting /contracts/[id] reloads full chat history
+    Backend:
+      1. requireAuth() → 401
+      2. chatMessageSchema.safeParse(body) → validates UUID, non-empty string ≤ 4000 chars
+      3. checkRateLimit(user.id, 'chat/message') → 429 if exceeded
+      4. sanitizeForLLM(content): strips ###, <|, |>, [INST], <<SYS>> patterns
+         → 400 INJECTION_DETECTED if empty after sanitise
+      5. Parallel: fetch contract.contract_text + verify chatSession ownership
+         → 403 if either not found or not owned
+      6. SELECT role, content FROM chat_messages
+         WHERE session_id = ... ORDER BY created_at ASC LIMIT 200
+      7. classifyQuery(sanitised) → 'contract' | 'history' | 'both'
+      8. buildChatMessages({ contractText, history, newUserMessage }):
+         [system] → getChatSystemPrompt(contractText)
+         [...history] → previous messages
+         [user] → new user message
+      9. callChat(messages): OpenAI GPT-4o, temp 0.4, max 1000 tokens
+      10. INSERT user message → INSERT assistant response
+      11. Return 200: { message_id, content, created_at, query_type }
+  → AI response appended to UI (left-aligned, white bubble)
+  → [Page X] citations rendered as clickable buttons → setTargetPage(X) → viewer scrolls
+  → "I cannot find this in the document." renders in italic grey-400; no page citation expected
+
+On revisit:
+  → GET /api/chat/{sessionId}/messages returns full history
+  → ChatInterface rehydrates all messages in order
 ```
-
-**Hallucination safeguard:**
-- System prompt: "Answer only from the document text provided. If the answer is not in the document, say so."
-- Mandatory `[Page X]` citation on every response
-- If model responds without a page citation, the UI appends "Source: unknown" to flag it
-
----
 
 ### Flow 5 — Inline Key Term Editing
 
 ```
-User clicks on an extracted term value in the key terms panel
-  → Inline input field renders pre-filled with current value
-  → User edits value and presses Enter or clicks Save
-  → PATCH /api/key-terms/[id] { value: "new value" }
-    → Server: verifies auth.uid() = key_terms.user_id (ownership check)
-    → Server: stores original value in ai_value (if not already stored)
-    → Server: UPDATE key_terms SET value='new value', is_edited=true
-  → Frontend re-renders term with "Edited" badge
-  → Original AI value preserved in ai_value column for feedback loop
+User sees term "Laws of the State of New York" in KeyTermCard
+  → User clicks the value text
+  → isEditing = true; input pre-filled with current value; autoFocus
+  → User changes to "New York State" → presses Enter
+  → handleSave():
+      if editValue.trim() === term.value → handleCancel() (no API call)
+      setIsSaving(true)
+      PATCH /api/key-terms/{term.id} { value: "New York State" }
+        Backend:
+          1. requireAuth()
+          2. keyTermPatchSchema.safeParse({ value }) → non-empty, ≤ 1000 chars
+          3. SELECT id, value, ai_value, is_edited, user_id FROM key_terms WHERE id = :id
+             → 404 if not found; 403 if user_id ≠ auth.uid()
+          4. if !is_edited: SET ai_value = current value (preserve original)
+          5. UPDATE SET value = 'New York State', is_edited = true
+          6. Return 200: { id, value, ai_value, is_edited: true }
+      Frontend: onUpdate(id, 'New York State') → optimistic update in parent
+      isEditing = false; "Edited" badge appears
+      Hovering "Edited" badge shows tooltip: "Original: Laws of the State of New York"
+  → Press Escape: handleCancel() → isEditing = false; editValue restored; no API call
 ```
-
----
 
 ### Flow 6 — Dashboard History
 
 ```
-User returns to /dashboard
-  → Frontend: SELECT * FROM contracts WHERE user_id = auth.uid() ORDER BY created_at DESC
-  → Renders sortable table: file_name | contract_type | created_at | status
-  → Clicking any row → navigates to /contracts/[id]
-  → Results page loads: key terms + chat history rehydrated from DB
+User navigates to /dashboard
+  → Server Component:
+      SELECT id, file_name, contract_type, status, page_count, created_at
+      FROM contracts WHERE user_id = auth.uid() ORDER BY created_at DESC
+  → Derived: total, ndaCount, msaCount
+  → StatCard × 3: Total / NDAs / MSAs
+  → ContractTable: sortable by file_name, contract_type, created_at, status
+    Default sort: created_at DESC (newest first)
+    Click column header → toggle sort direction
+  → Click row → router.push('/contracts/{id}')
+  → Empty state (0 contracts): illustration + "No contracts reviewed yet" + "Review a Contract" CTA
+```
+
+### Flow 7 — Feedback Submission
+
+```
+FeedbackWidget renders at bottom of KeyTermsPanel
+  → If existingFeedback from server fetch: shows "Feedback received" immediately
+  → Otherwise: thumbs up / thumbs down buttons
+
+User clicks 👍
+  → selectedRating = 'thumbs_up'; button fills blue-500
+  → Textarea appears for optional comment
+  → "Submit Feedback" button appears
+
+User clicks "Submit Feedback"
+  → POST /api/feedback { contract_id, rating: 'thumbs_up', comment: 'Great tool!' }
+    Backend:
+      1. requireAuth()
+      2. feedbackSchema.safeParse → validates rating enum, comment ≤ 2000 chars
+      3. SELECT id FROM contracts WHERE id = contract_id AND user_id = user.id
+         → 403 if not found
+      4. SELECT id FROM user_feedback WHERE contract_id = ... AND user_id = ...
+         → 409 if already submitted
+      5. INSERT INTO user_feedback
+      6. Return 201: { feedback_id }
+  → Widget replaced with: "Thanks for your feedback!"
 ```
 
 ---
@@ -323,97 +422,135 @@ User returns to /dashboard
 
 | Technology | Version | Purpose |
 |---|---|---|
-| Next.js | 14.2.5 | App Router, server components, API routes |
-| React | 18.3.1 | UI rendering |
-| Tailwind CSS | 3.x | Utility-first styling, design system tokens |
-| Lucide React | latest | Icon library |
-| PDF.js (pdfjs-dist) | 4.x | Client-side PDF rendering |
-| @supabase/supabase-js | 2.x | DB, auth, storage client |
-| Zod | 3.x | Runtime schema validation (shared with backend) |
+| Next.js | 14.2.5 | App Router, Server Components, API Routes |
+| React | 18.3.1 | Client Components, UI rendering |
+| Tailwind CSS | 3.4.4 | Utility-first styling |
+| Lucide React | 0.400.0 | Icon library (AlertTriangle, ThumbsUp, FileText, etc.) |
+| PDF.js (pdfjs-dist) | 4.3.136 | Client-side PDF rendering |
+| @supabase/supabase-js | 2.44.3 | Supabase DB + Auth + Storage client |
+| @supabase/auth-helpers-nextjs | 0.10.0 | Middleware client, route/server component clients |
+| Zod | 3.23.8 | Runtime schema validation (shared with backend) |
 
-### Design System Integration
+### Design System
 
-All colors, typography, spacing, and component styles must come from `docs/design.md`:
+Color tokens (from `docs/design.md`):
 
-- **Brand colors:** Primary `#112E81`, Secondary `#4647AE`, Accent `#AACCD6`
-- **Confidence colors:** Green (≥80%), Lime (70–79%), Amber (50–69%), Red (<50%)
-- **Typography:** Inter for all UI text; JetBrains Mono for contract text display
-- **Spacing:** 4px base grid
-- **Border radius:** 4–12px range
-
-### Routing
-
-| Route | Page | Auth Required |
+| Role | Hex | Usage |
 |---|---|---|
-| `/` | Landing page | No |
-| `/auth/login` | Sign-in form | No (redirects to /dashboard if authed) |
-| `/auth/signup` | Sign-up form | No (redirects to /dashboard if authed) |
-| `/dashboard` | Contract list + stats | Yes |
-| `/upload` | Contract type + PDF upload + pre-processing | Yes |
-| `/contracts/[id]` | Results: PDF viewer + key terms + chat | Yes |
+| Brand / Interactive | `#115ACB` | Buttons, links, focus rings |
+| Primary text | `#070A0E` | Body text, headings |
+| Secondary text | `#4A4C4F` | Labels, captions |
+| Page background | `#FAFAFA` | Root background |
+| Card background | `#FFFFFF` | Cards, panels |
+| Subtle divider | `#F0F0F1` | Borders, separators |
+| Confidence ≥ 80% | `#13A10E` | Green confidence bar |
+| Confidence 50–79% | `#FFAA33` | Amber confidence bar |
+| Confidence < 50% | `#D13438` | Red confidence bar + ⚠️ |
 
-**Route protection:** `middleware.ts` checks Supabase session; redirects unauthenticated users from protected routes to `/auth/login`.
+**Typography:** Inter Display (all UI text); JetBrains Mono (contract text in TextViewerFallback).
+
+**Spacing:** 4px base unit. Page padding: 96px vertical / 112px horizontal. Section gap: 40px.
+
+### Routing Architecture
+
+| Route | Type | Auth | Component |
+|---|---|---|---|
+| `/` | Server | No | Landing page (static) |
+| `/auth/login` | Client | Redirect to /dashboard if authed | LoginPage |
+| `/auth/signup` | Client | Redirect to /dashboard if authed | SignupPage |
+| `/dashboard` | Server | Required | DashboardPage |
+| `/upload` | Client | Required | UploadPage |
+| `/contracts/[id]` | Server + Client | Required | ResultsPage (Server) + ResultsClient (Client) |
+
+**Route protection:** `middleware.ts` uses `createMiddlewareClient({ req, res })` and `supabase.auth.getSession()`. Protected prefixes: `/dashboard`, `/upload`, `/contracts`. Unauthenticated users redirect to `/auth/login?next={pathname}`. Authenticated users visiting `/auth/*` redirect to `/dashboard`.
+
+**Server+Client split for `/contracts/[id]`:** `page.tsx` is a Server Component that fetches all data (contract, keyTerms, chatSession, signedUrl, existingFeedback) and passes them as props to `ResultsClient.tsx`. `ResultsClient` owns all interactive state (`targetPage`, `isChatOpen`, key term mutations).
 
 ### State Management
 
-- **Auth state:** Supabase client session (managed by `@supabase/auth-helpers-nextjs`)
-- **Contract review state:** React `useState` / `useReducer` local to the upload and results pages
-- **Chat state:** Local `useState` for optimistic UI; messages persisted to DB and rehydrated on load
-- **No global state manager** (Redux/Zustand) needed at MVP — Supabase client handles all persistence
+No global state manager at MVP. All state management is local:
+
+| State Type | Where | How |
+|---|---|---|
+| Auth session | Global | Supabase cookie (managed by @supabase/auth-helpers-nextjs) |
+| Upload flow | UploadPage | Local `useState`: step, contractType, file, customTerms, processingStep |
+| Results viewer | ResultsClient | Local `useState`: targetPage, isChatOpen |
+| Key terms (editable) | KeyTermsPanel | Local `useState`: keyTerms array (initialised from server-fetched props) |
+| Chat messages | ChatInterface | Local `useState`: messages[], sessionId, isLoading |
+| Dashboard sort | ContractTable | Local `useState`: sortKey, sortDir |
 
 ### UX States
 
-| State | Where | Implementation |
+| State | Location | Implementation |
 |---|---|---|
-| Loading skeleton | Dashboard list, key terms panel | Tailwind `animate-pulse` skeleton divs |
-| Empty state | Dashboard (no contracts yet) | Illustration + "Upload your first contract" CTA |
-| Processing stepper | Upload page after "Process Contract" | 3-step progress indicator with animated spinner |
-| Error banner | Upload failure, OpenAI timeout | Full-width dismissible banner with retry CTA |
-| Low-confidence warning | Key terms panel | ⚠️ icon + non-dismissible Tooltip component |
-| "Not found" chat response | Chat interface | Normal response styled differently, no page citation shown |
-| Storage unavailable | Results page | Text viewer renders automatically; no error shown to user |
+| Loading skeleton | Dashboard list, key terms panel | `Skeleton.tsx`: shimmer via `animate-pulse` |
+| Empty state | Dashboard (no contracts) | `EmptyState.tsx`: icon + heading + CTA |
+| Processing stepper | Upload after "Analyse Contract" | `ProcessingProgress.tsx`: 3-step indicator with Spinner on active step |
+| Error banner | Upload failure, AI timeout | `Banner.tsx`: full-width, variant="error", dismissible, optional retry action |
+| Low-confidence warning | Key terms panel per card | `Tooltip.tsx` with `dismissible=false` wrapping AlertTriangle icon |
+| Storage unavailable | Results page | `TextViewerFallback.tsx` renders silently; no error shown |
+| Contract processing | Results page | Polling GET /api/contracts/[id] every 3 seconds until status = 'completed' |
+| Contract error | Results page | Error banner with "Reprocess" button |
+| Responsive (mobile) | Results page | Stacked layout: viewer top, key terms panel below |
+| WCAG 2.1 AA | All interactive elements | 2px solid #115ACB focus ring; `aria-live` on chat + processing stepper |
 
 ### Page and Component Hierarchy
 
 ```
-app/layout.jsx                    ← Root layout: Nav, Supabase Auth provider, font imports
-├── app/page.jsx                  ← Landing page (Hero, Features, Pricing, CTA)
-├── app/(auth)/
-│   ├── login/page.jsx            ← LoginPage
-│   └── signup/page.jsx           ← SignupPage
+app/layout.tsx                          ← Root: <html>, <body>, globals.css
+├── app/page.tsx                        ← Landing page (Server)
+├── app/auth/
+│   ├── login/page.tsx                  ← LoginPage ('use client')
+│   └── signup/page.tsx                 ← SignupPage ('use client')
 └── app/(protected)/
-    ├── dashboard/page.jsx        ← DashboardPage
-    │   ├── components/dashboard/StatCard.jsx
-    │   ├── components/dashboard/ContractTable.jsx
-    │   └── components/dashboard/EmptyState.jsx
-    ├── upload/page.jsx           ← UploadPage
-    │   ├── components/upload/ContractTypeSelector.jsx
-    │   ├── components/upload/DropZone.jsx
-    │   ├── components/upload/TermPreviewList.jsx
-    │   ├── components/upload/CustomTermInput.jsx
-    │   └── components/upload/ProcessingProgress.jsx
-    └── contracts/[id]/page.jsx  ← ResultsPage
-        ├── components/viewer/PDFViewer.jsx
-        ├── components/viewer/TextViewerFallback.jsx
-        ├── components/contracts/KeyTermsPanel.jsx
-        │   ├── components/contracts/KeyTermCard.jsx
-        │   │   ├── components/contracts/ConfidenceBar.jsx
-        │   │   └── components/contracts/SourceSentence.jsx
-        │   └── components/contracts/FeedbackWidget.jsx
-        └── components/chat/ChatInterface.jsx
-            └── components/chat/MessageBubble.jsx
+    ├── layout.tsx                      ← Protected layout wrapper
+    ├── dashboard/page.tsx              ← DashboardPage (Server Component)
+    │   ├── StatCard.tsx                ← Stat display card
+    │   ├── ContractTable.tsx           ← Sortable list ('use client')
+    │   └── EmptyState.tsx              ← Empty state illustration
+    ├── upload/page.tsx                 ← UploadPage ('use client')
+    │   ├── ContractTypeSelector.tsx    ← NDA/MSA dropdown
+    │   ├── DropZone.tsx                ← Drag-and-drop file picker ('use client')
+    │   ├── TermPreviewList.tsx         ← Standard + custom terms preview
+    │   ├── CustomTermInput.tsx         ← Add custom term input + counter
+    │   └── ProcessingProgress.tsx      ← 3-step processing stepper
+    └── contracts/[id]/page.tsx         ← ResultsPage (Server Component)
+        └── ResultsClient.tsx           ← ('use client') owns targetPage state
+            ├── PDFViewer.tsx           ← PDF.js-based viewer ('use client')
+            ├── TextViewerFallback.tsx  ← [PAGE N] marker parser ('use client')
+            ├── KeyTermsPanel.tsx       ← Right panel, scrollable
+            │   ├── KeyTermCard.tsx     ← Individual term card ('use client')
+            │   │   ├── ConfidenceBar.tsx  ← Coloured progress bar
+            │   │   └── SourceSentence.tsx ← Expandable "Why?" section
+            │   └── FeedbackWidget.tsx  ← Thumbs up/down ('use client')
+            └── ChatInterface.tsx       ← Chat tab ('use client')
+                └── MessageBubble.tsx   ← Individual message (user/assistant)
+
+components/layout/
+└── Nav.tsx                             ← Sticky nav: logo + auth CTA ('use client')
+
+components/ui/                          ← Reusable design-system primitives
+├── Button.tsx
+├── Badge.tsx
+├── Tooltip.tsx
+├── Input.tsx
+├── Textarea.tsx
+├── Modal.tsx
+├── Spinner.tsx
+├── Banner.tsx
+└── Skeleton.tsx
 ```
 
-**Shared UI primitives** (`components/ui/`):
-`Button`, `Badge`, `Tooltip`, `Input`, `Textarea`, `Modal`, `Spinner`, `Banner`, `Skeleton`
+### Accessibility Requirements (WCAG 2.1 AA)
 
-### Accessibility
-
-- WCAG 2.1 AA compliance target
-- All interactive elements keyboard-navigable with visible focus ring
-- Confidence colour coding supplemented by icon (⚠️) — not colour alone
-- Legal jargon tooltipped inline (hover/focus reveals plain-English explanation)
-- `aria-live` regions on chat response area and processing stepper
+- All buttons and links: keyboard navigable, visible focus ring (2px solid #115ACB)
+- Confidence colour coding supplemented by ⚠️ icon — not colour alone
+- `ConfidenceBar`: `role="meter"` `aria-valuenow` `aria-valuemin` `aria-valuemax` `aria-label`
+- Chat messages container: `aria-live="polite"` so screen readers announce new messages
+- Processing stepper: `aria-live="polite"` to announce step changes
+- Modal: `role="dialog"` `aria-modal="true"` `aria-labelledby`; focus trapped; Escape closes
+- Legal jargon: tooltipped inline (hover/focus reveals plain-English explanation)
+- All images: descriptive `alt` text; decorative images: `alt=""`
 
 ---
 
@@ -421,295 +558,324 @@ app/layout.jsx                    ← Root layout: Nav, Supabase Auth provider, 
 
 ### Stack
 
-- **Runtime:** Node.js (Vercel serverless functions via Next.js API Routes)
-- **Framework:** Next.js 14 API Routes (`app/api/**/route.ts`)
-- **DB client:** `@supabase/supabase-js` (server-side, using service role key for writes; anon key for auth-gated reads)
-- **PDF parsing:** `pdf-parse` (Node.js)
-- **AI client:** `openai` npm package
-- **Validation:** Zod
-- **Environment:** `.env.local` (never committed); `.env.example` documents all required vars
+| Component | Technology | Notes |
+|---|---|---|
+| Runtime | Node.js | Via Next.js API Routes (`export const runtime = 'nodejs'`) |
+| API Framework | Next.js 14 App Router API routes | Files at `app/api/**/route.ts` |
+| Auth guard | `lib/security/authGuard.ts` → `requireAuth()` | Uses `supabase.auth.getUser()` (JWT validation — more secure than `getSession()`) |
+| DB client (routes) | `createRouteHandlerClient` | Respects RLS; reads session from cookie |
+| DB client (server components) | `createServerComponentClient` | Same cookie-based session |
+| DB client (admin operations) | `createClient` with `SUPABASE_SERVICE_ROLE_KEY` | Bypasses RLS for storage uploads and rate limit writes |
+| PDF parsing | `pdf-parse` + `lib/pdf/extractor.ts` | Server-only; configured in next.config.mjs as external package |
+| AI client | `openai` npm package | `lib/ai/extraction.ts`, `lib/ai/chat.ts` |
+| Validation | `zod` | All API routes validate request body before processing |
+| Rate limiting | Sliding window via `rate_limit_events` table | `lib/security/rateLimiter.ts` |
+| Injection guard | `lib/security/promptInjectionGuard.ts` | Strips `###`, `<|`, `|>`, `[INST]`, `<<SYS>>` |
 
-### Core Services
+### Core Systems
 
-```
-lib/
-├── supabase/
-│   ├── client.ts          ← Browser client (anon key, used in Client Components)
-│   └── server.ts          ← Server client (service role key, used in API routes only)
-├── pdf/
-│   └── extractor.ts       ← pdf-parse wrapper: returns { text, pageCount, wordCount, tokenCount }
-│                              Injects [PAGE N] markers; throws if wordCount < 100 or tokenCount > 15000
-├── ai/
-│   ├── extraction.ts      ← buildExtractionPrompt() + callExtraction() + parseExtractionResponse()
-│   ├── chat.ts            ← buildChatMessages() + callChat() with full context + history
-│   ├── classifier.ts      ← classifyQuery(message) → 'contract' | 'history' | 'both'
-│   └── prompts/
-│       ├── nda-extraction.ts   ← System prompt + 3 few-shot NDA examples + NDA term list
-│       ├── msa-extraction.ts   ← System prompt + 3 few-shot MSA examples + MSA term list
-│       └── chat-system.ts      ← Chat system prompt (document-only instruction)
-├── validation/
-│   ├── upload.schema.ts        ← Zod: file size, type, contract_type enum
-│   ├── process.schema.ts       ← Zod: contract_id, custom_terms (max 5, each ≤ 100 chars)
-│   ├── key-term.schema.ts      ← Zod: value (non-empty, ≤ 1000 chars)
-│   ├── chat.schema.ts          ← Zod: contract_id, session_id, message (non-empty, ≤ 4000 chars)
-│   └── feedback.schema.ts      ← Zod: contract_id, rating enum, comment (optional, ≤ 2000 chars)
-└── constants.ts
-    ├── MAX_FILE_SIZE_MB = 10
-    ├── MAX_PAGES = 20
-    ├── MAX_TOKEN_COUNT = 15000
-    ├── MIN_WORD_COUNT = 100
-    ├── MAX_CUSTOM_TERMS = 5
-    ├── CONFIDENCE_THRESHOLD_LOW = 50
-    ├── CONFIDENCE_THRESHOLD_HIGH = 80
-    ├── OPENAI_EXTRACTION_TEMP = 0.1
-    ├── OPENAI_CHAT_TEMP = 0.4
-    ├── OPENAI_EXTRACTION_MAX_TOKENS = 2000
-    ├── OPENAI_CHAT_MAX_TOKENS = 1000
-    ├── SIGNED_URL_EXPIRY_SECONDS = 3600
-    └── MAX_CHAT_HISTORY = 200
-```
+**Authentication / Authorisation:**
+- Supabase Auth manages all user identity (`auth.users` table)
+- `requireAuth()` calls `supabase.auth.getUser()` on every protected route — validates JWT against Supabase Auth server
+- All DB tables enforce `auth.uid() = user_id` via RLS policies
+- Storage bucket enforces `auth.uid()::text = (storage.foldername(name))[1]`
 
-### OpenAI Error Handling
+**Business Logic:**
+- PDF validation: `lib/pdf/extractor.ts` — validates page count, word count (scanned PDF detection), token count
+- Extraction orchestration: `lib/ai/extraction.ts` — builds prompt, calls OpenAI, retries on JSON parse failure (up to 3 attempts), validates output schema with Zod
+- Chat orchestration: `lib/ai/chat.ts` — builds full message array (system + contractText + history + new message), calls OpenAI
+- Query classification: `lib/ai/classifier.ts` — keyword/pattern match (no extra API call)
 
-```
-Attempt 1 → OpenAI API call
-  → Success → parse JSON response → continue
-  → JSON parse failure → Attempt 2 with corrective prompt:
-      "Your previous response was not valid JSON. Return only the JSON array, no explanation."
-  → Success → continue
-  → Failure → Attempt 3 (same corrective prompt)
-  → Failure → UPDATE contracts SET status='error'
-              → Return 504 with { error: "AI processing failed. Please try again." }
-              → Frontend shows error banner with "Try again" button (user can retry without re-uploading)
-```
+**Validation:** Every API route has a corresponding Zod schema in `lib/validation/`. Validation failures return 400 with the first Zod error message.
+
+**Error Handling:** All routes use a local `err(status, code, message)` helper returning `{ data: null, error: { code, message } }`. OpenAI failures: up to 3 retries for extraction; `contracts.status` set to `'error'` on final failure. Storage failures: non-fatal; caught and logged; `file_path` remains null. DB failures: return 500 INTERNAL_ERROR.
 
 ### Service Interaction Diagram
 
 ```
-Browser (React)
+Browser (Next.js Client Components)
     │
-    ├── Supabase JS client ──────────────────── Supabase Auth
-    │   (auth, realtime reads)                   Supabase DB (RLS reads)
+    ├── supabase.auth.*  ────────────────────────────►  Supabase Auth Service
+    │   (createBrowserClient - anon key)                  (validates tokens)
     │
-    └── Fetch (API routes)
-            │
-            └── Next.js API Routes (Vercel)
-                    │
-                    ├── lib/pdf/extractor.ts ──── pdf-parse (Node.js)
-                    │
-                    ├── lib/ai/extraction.ts ───── OpenAI GPT-4o API
-                    ├── lib/ai/chat.ts ──────────── OpenAI GPT-4o API
-                    │
-                    └── lib/supabase/server.ts ─── Supabase DB (writes)
-                                                    Supabase Storage (PDF upload)
+    ├── supabase.from().*  ──────────────────────────►  Supabase PostgreSQL
+    │   (anon key, RLS enforced)                           (RLS: read own data)
+    │
+    └── fetch('/api/...')  ──────────────────────────►  Next.js API Routes
+                                                          (Node.js serverless)
+                                                               │
+                           ┌───────────────────────────────────┤
+                           │                                   │
+                  lib/pdf/extractor.ts               lib/ai/extraction.ts
+                  (pdf-parse, Node.js)               lib/ai/chat.ts
+                           │                         (openai npm package)
+                           │                                   │
+                           └───────────────────────────────────►  OpenAI API
+                                                                   (GPT-4o)
+                           │
+                  lib/supabase/server.ts
+                  createRouteClient()  ────────────►  Supabase PostgreSQL
+                  (RLS-enforced writes)               (INSERT/UPDATE via RLS)
+                           │
+                  createAdminClient() ────────────►   Supabase Storage
+                  (service role key)                  (PDF upload, signed URLs)
+                           │
+                  createAdminClient() ────────────►   rate_limit_events table
+                  (bypasses RLS for rate limit writes)
 ```
+
+### Long-running Route Configuration
+
+The chat and process routes set `export const maxDuration = 60` to support up to 60-second OpenAI calls on Netlify (avoids function timeout before the LLM responds). Both routes also set `export const runtime = 'nodejs'` explicitly.
 
 ---
 
 ## 7. Database Design and Schema
 
-### Overview
+### Architecture Notes
 
-Single Supabase project; all tables in the `public` schema. Supabase Auth manages `auth.users` — all application tables reference `auth.users.id` via `user_id` FK. RLS is enabled on every table.
+- Single Supabase project; all application tables in the `public` schema
+- Supabase Auth manages `auth.users` — never modified directly; referenced via FK
+- RLS enabled on all 7 tables
+- All UUIDs: `gen_random_uuid()` (from pgcrypto extension)
+- All timestamps: `timestamptz` with `DEFAULT now()`
+- Complete runnable SQL: `docs/specs/supabase-schema.sql`
 
----
+### Entity-Relationship Diagram
+
+```
+auth.users (managed by Supabase Auth)
+    │  (user_id FK — all tables reference this)
+    │
+    ├──< contracts
+    │   id (PK)
+    │   user_id → auth.users
+    │   file_name, contract_type, contract_text, file_path
+    │   page_count, token_count, status, created_at, last_accessed_at
+    │       │
+    │       ├──< key_terms
+    │       │   id, contract_id, user_id
+    │       │   term_name, value, ai_value (nullable)
+    │       │   page_number, confidence_score, source_sentence
+    │       │   is_manual, is_edited, created_at
+    │       │
+    │       ├──< custom_key_terms
+    │       │   id, contract_id, user_id, term_name, created_at
+    │       │
+    │       ├──< user_feedback
+    │       │   id, contract_id, user_id, rating, comment, created_at
+    │       │
+    │       └──< chat_sessions  (UNIQUE on contract_id)
+    │           id, contract_id, user_id, created_at
+    │               │
+    │               └──< chat_messages
+    │                   id, session_id, user_id, role, content, created_at
+    │
+    └──< rate_limit_events
+        id, user_id, endpoint, created_at
+```
 
 ### Table: `contracts`
 
-**Purpose:** Stores uploaded contract metadata, extracted text, and processing status.
+**Purpose:** Stores uploaded contract metadata, extracted text (single source of truth for all AI pipelines), and processing status.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
 | `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | |
-| `file_name` | `text` | NOT NULL | Original uploaded filename |
-| `contract_type` | `text` | NOT NULL, CHECK IN ('nda','msa') | |
-| `contract_text` | `text` | NOT NULL | Full text with `[PAGE N]` markers; used by all AI pipelines |
-| `file_path` | `text` | NULLABLE | `contracts/{user_id}/{id}/{filename}.pdf`; null if Storage upload failed |
-| `page_count` | `integer` | NOT NULL | |
-| `token_count` | `integer` | NOT NULL | Approximate token count for cost tracking |
-| `status` | `text` | NOT NULL, CHECK IN ('pending','processing','completed','error'), default 'pending' | |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
-| `last_accessed_at` | `timestamptz` | NOT NULL, default `now()` | Updated on each page visit; used for 90-day retention policy |
+| `file_name` | `text` | NOT NULL | Original filename (e.g. `acme-nda.pdf`) |
+| `contract_type` | `text` | NOT NULL, CHECK IN (`'nda'`, `'msa'`) | Validated at API layer before insert |
+| `contract_text` | `text` | NOT NULL | Full text with `[PAGE N]` markers; extracted once; reused by all AI pipelines |
+| `file_path` | `text` | NULLABLE | `{user_id}/{contract_id}/{filename}.pdf`; null if Storage upload failed |
+| `page_count` | `integer` | NOT NULL | Set by pdf-parse at upload time |
+| `token_count` | `integer` | NOT NULL | Approximate: `Math.ceil(text.length / 4)` |
+| `status` | `text` | NOT NULL, CHECK IN (`'pending'`,`'processing'`,`'completed'`,`'error'`), DEFAULT `'pending'` | |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | |
+| `last_accessed_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Updated on each visit; drives 90-day PDF retention |
 
 **Indexes:**
-- `idx_contracts_user_id ON contracts(user_id)`
-- `idx_contracts_user_id_created_at ON contracts(user_id, created_at DESC)` — dashboard list query
+```sql
+CREATE INDEX idx_contracts_user_id ON public.contracts (user_id);
+CREATE INDEX idx_contracts_user_id_created_at ON public.contracts (user_id, created_at DESC);
+```
 
-**RLS Policies:**
-- `SELECT`: `auth.uid() = user_id`
-- `INSERT`: `auth.uid() = user_id`
-- `UPDATE`: `auth.uid() = user_id`
-- `DELETE`: `auth.uid() = user_id`
+**RLS Policies:** SELECT, INSERT, UPDATE, DELETE — all require `auth.uid() = user_id`.
 
 ---
 
 ### Table: `key_terms`
 
-**Purpose:** Stores every extracted key term (standard or custom) for a contract.
+**Purpose:** One row per extracted key term per contract. Standard terms extracted by AI; custom terms land here with `is_manual = true`.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
 | `contract_id` | `uuid` | NOT NULL, FK → `contracts(id)` ON DELETE CASCADE | |
-| `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | Denormalised for RLS |
-| `term_name` | `text` | NOT NULL | e.g. "Governing Law", "Liability Cap" |
-| `value` | `text` | NOT NULL | Current value (may be user-edited) |
-| `ai_value` | `text` | NULLABLE | Original AI-extracted value; set on first user edit |
-| `page_number` | `integer` | NOT NULL | 1-indexed page number |
-| `confidence_score` | `numeric(5,2)` | NOT NULL, CHECK BETWEEN 0 AND 100 | e.g. 87.50 |
-| `source_sentence` | `text` | NOT NULL | Verbatim sentence from contract used to extract value |
-| `is_manual` | `boolean` | NOT NULL, default false | true for user-defined custom terms |
-| `is_edited` | `boolean` | NOT NULL, default false | true after user edits the value |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
+| `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | Denormalised for RLS — avoids join on every read |
+| `term_name` | `text` | NOT NULL | e.g. `"Governing Law"`, `"Liability Cap"` |
+| `value` | `text` | NOT NULL | Current value (may be user-edited); displayed in UI |
+| `ai_value` | `text` | NULLABLE | Original AI-extracted value; set on first user edit; preserved for feedback loop |
+| `page_number` | `integer` | NOT NULL | 1-indexed; 0 if term not found in document |
+| `confidence_score` | `numeric(5,2)` | NOT NULL, CHECK BETWEEN 0 AND 100 | Self-reported by GPT-4o; e.g. `87.50` |
+| `source_sentence` | `text` | NOT NULL | Verbatim sentence used to extract value; shown in "Why?" section |
+| `is_manual` | `boolean` | NOT NULL, DEFAULT `false` | `true` for user-defined custom terms |
+| `is_edited` | `boolean` | NOT NULL, DEFAULT `false` | `true` after user edits the value inline |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | |
 
 **Indexes:**
-- `idx_key_terms_contract_id ON key_terms(contract_id)`
-- `idx_key_terms_user_id ON key_terms(user_id)`
+```sql
+CREATE INDEX idx_key_terms_contract_id ON public.key_terms (contract_id);
+CREATE INDEX idx_key_terms_user_id ON public.key_terms (user_id);
+```
 
-**RLS Policies:**
-- `SELECT`: `auth.uid() = user_id`
-- `INSERT`: `auth.uid() = user_id`
-- `UPDATE`: `auth.uid() = user_id`
-- `DELETE`: `auth.uid() = user_id`
+**RLS Policies:** SELECT, INSERT, UPDATE, DELETE — all require `auth.uid() = user_id`.
 
 ---
 
 ### Table: `custom_key_terms`
 
-**Purpose:** Stores user-defined key terms added before processing. These are consumed by the extraction pipeline and result in `key_terms` rows with `is_manual = true`.
+**Purpose:** Stores user-defined key terms added before processing. Consumed by the extraction pipeline → results in `key_terms` rows with `is_manual = true`.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
 | `contract_id` | `uuid` | NOT NULL, FK → `contracts(id)` ON DELETE CASCADE | |
 | `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | |
-| `term_name` | `text` | NOT NULL | User-provided term name |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
+| `term_name` | `text` | NOT NULL | User-provided term name (e.g. `"Non-compete radius"`) |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | |
 
-**Constraint:** Max 5 custom terms per contract enforced at API level (not DB level).
+**Constraint note:** Max 5 per contract enforced at API level. API counts existing rows before INSERT; returns 400 TOO_MANY_CUSTOM_TERMS if at limit.
 
-**Indexes:**
-- `idx_custom_key_terms_contract_id ON custom_key_terms(contract_id)`
+**Index:**
+```sql
+CREATE INDEX idx_custom_key_terms_contract_id ON public.custom_key_terms (contract_id);
+```
 
-**RLS Policies:** Same pattern as `key_terms`.
+**RLS Policies:** SELECT, INSERT, UPDATE, DELETE — all require `auth.uid() = user_id`.
 
 ---
 
 ### Table: `chat_sessions`
 
-**Purpose:** Groups chat messages per contract. One session per contract at MVP.
+**Purpose:** Groups chat messages per contract. One session per contract enforced by UNIQUE constraint.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
-| `contract_id` | `uuid` | NOT NULL, FK → `contracts(id)` ON DELETE CASCADE, UNIQUE | One session per contract |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
+| `contract_id` | `uuid` | NOT NULL, FK → `contracts(id)` ON DELETE CASCADE, **UNIQUE** | One session per contract |
 | `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | |
 
-**Indexes:**
-- `idx_chat_sessions_contract_id ON chat_sessions(contract_id)`
+**Index:**
+```sql
+CREATE INDEX idx_chat_sessions_contract_id ON public.chat_sessions (contract_id);
+```
 
-**RLS Policies:** Same pattern.
+**RLS Policies:** SELECT, INSERT — `auth.uid() = user_id`. (No UPDATE/DELETE at MVP.)
 
 ---
 
 ### Table: `chat_messages`
 
-**Purpose:** Stores every message in a chat session (user questions + AI responses).
+**Purpose:** Stores every message in a chat session (both user questions and assistant responses).
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
 | `session_id` | `uuid` | NOT NULL, FK → `chat_sessions(id)` ON DELETE CASCADE | |
 | `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | |
-| `role` | `text` | NOT NULL, CHECK IN ('user', 'assistant') | |
-| `content` | `text` | NOT NULL | |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
+| `role` | `text` | NOT NULL, CHECK IN (`'user'`, `'assistant'`) | |
+| `content` | `text` | NOT NULL | Full message content |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Used for ASC ordering in history fetch |
 
-**Indexes:**
-- `idx_chat_messages_session_id_created_at ON chat_messages(session_id, created_at ASC)` — fetch all messages in order
+**Index:**
+```sql
+CREATE INDEX idx_chat_messages_session_id_created_at
+  ON public.chat_messages (session_id, created_at ASC);
+```
 
-**RLS Policies:** Same pattern.
+The ASC index matches the query: `ORDER BY created_at ASC LIMIT 200`.
+
+**RLS Policies:** SELECT, INSERT — `auth.uid() = user_id`.
 
 ---
 
 ### Table: `user_feedback`
 
-**Purpose:** Stores post-review feedback (thumbs up/down + optional comment).
+**Purpose:** Post-review feedback from users — one feedback record per contract per user.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
 | `contract_id` | `uuid` | NOT NULL, FK → `contracts(id)` ON DELETE CASCADE | |
 | `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | |
-| `rating` | `text` | NOT NULL, CHECK IN ('thumbs_up', 'thumbs_down') | |
-| `comment` | `text` | NULLABLE | Optional free-text comment |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
+| `rating` | `text` | NOT NULL, CHECK IN (`'thumbs_up'`, `'thumbs_down'`) | |
+| `comment` | `text` | NULLABLE | Optional free-text; max 2000 chars enforced at API layer |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | |
 
-**RLS Policies:** Same pattern.
+**One-feedback-per-contract enforcement:** API checks for existing record before INSERT; returns 409 ALREADY_SUBMITTED if found.
+
+**RLS Policies:** SELECT, INSERT — `auth.uid() = user_id`.
 
 ---
 
 ### Table: `rate_limit_events`
 
-**Purpose:** Sliding-window rate limiting — one row per API call per user per endpoint; old rows pruned periodically.
+**Purpose:** Sliding-window rate limit log. One row per API call per user per endpoint. Rows older than 2 hours pruned by the API on each check (fire-and-forget DELETE).
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK, default `gen_random_uuid()` | |
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
 | `user_id` | `uuid` | NOT NULL, FK → `auth.users(id)` ON DELETE CASCADE | |
-| `endpoint` | `text` | NOT NULL | e.g. 'contracts/process', 'chat/message' |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` | |
+| `endpoint` | `text` | NOT NULL | `'contracts/process'` or `'chat/message'` |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | |
 
-**Indexes:**
-- `idx_rate_limit_events_user_endpoint_created ON rate_limit_events(user_id, endpoint, created_at DESC)`
+**Rate limits (from `lib/constants.ts`):**
+- `contracts/process`: 20 per user per hour
+- `chat/message`: 60 per user per hour
 
-**Rate limits (MVP):**
-- `contracts/process`: 20 requests / user / hour
-- `chat/message`: 60 requests / user / hour
+**Index:**
+```sql
+CREATE INDEX idx_rate_limit_events_user_endpoint_created
+  ON public.rate_limit_events (user_id, endpoint, created_at DESC);
+```
 
-**RLS Policies:**
-- `SELECT`: `auth.uid() = user_id`
-- `INSERT`: `auth.uid() = user_id`
+**Important:** `checkRateLimit()` uses `createAdminClient()` (service role) — bypasses RLS so the rate limit is tamper-proof even if a user deletes their own rows through the client SDK.
+
+**RLS Policies:** SELECT, INSERT — `auth.uid() = user_id`. (Admin client bypasses these for writes.)
 
 ---
 
-### Supabase Storage
+### Supabase Storage Configuration
 
-**Bucket:** `contracts` (created via SQL — `INSERT INTO storage.buckets`)
+**Bucket:** `contracts` (private; access via signed URLs only)
 
-**File path pattern:** `contracts/{user_id}/{contract_id}/{filename}.pdf`
-
-**Signed URL expiry:** 3600 seconds (1 hour)
-
-**Storage RLS Policies (on `storage.objects`):**
-- `INSERT`: `auth.uid()::text = (storage.foldername(name))[1]`
-- `SELECT`: `auth.uid()::text = (storage.foldername(name))[1]`
-- `DELETE`: `auth.uid()::text = (storage.foldername(name))[1]`
-
-**Non-blocking behaviour:** Storage upload happens after text extraction and DB insert. If Storage upload fails, `contracts.file_path` remains null; the PDF viewer is hidden; the text-viewer fallback renders automatically. The AI pipeline is unaffected.
-
-**Data retention:** PDFs auto-deleted after 90 days from `last_accessed_at`. Users can delete a contract (and all associated data) from the dashboard — this triggers CASCADE deletes across all tables and a Storage object deletion.
-
----
-
-### Entity Relationship Diagram
-
+Created via SQL (must be in `docs/specs/supabase-schema.sql`):
+```sql
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('contracts', 'contracts', false, 10485760, ARRAY['application/pdf'])
+ON CONFLICT (id) DO NOTHING;
 ```
-auth.users
-    │
-    ├──< contracts (user_id)
-    │       │
-    │       ├──< key_terms (contract_id)
-    │       ├──< custom_key_terms (contract_id)
-    │       ├──< user_feedback (contract_id)
-    │       └──< chat_sessions (contract_id, UNIQUE)
-    │                   │
-    │                   └──< chat_messages (session_id)
-    │
-    └──< rate_limit_events (user_id)
+
+**File path pattern:** `{user_id}/{contract_id}/{filename}.pdf`
+
+**Signed URL expiry:** 3600 seconds (1 hour). Generated server-side using `createAdminClient().storage.from('contracts').createSignedUrl(file_path, 3600)`.
+
+**Storage RLS Policies (3 — on `storage.objects`):**
+```sql
+-- INSERT: user can only upload to their own folder
+auth.uid()::text = (storage.foldername(name))[1] AND bucket_id = 'contracts'
+
+-- SELECT: user can only read their own files
+auth.uid()::text = (storage.foldername(name))[1] AND bucket_id = 'contracts'
+
+-- DELETE: user can only delete their own files
+auth.uid()::text = (storage.foldername(name))[1] AND bucket_id = 'contracts'
 ```
+
+`(storage.foldername(name))[1]` extracts the first path segment (the `user_id`).
+
+**Data retention:** PDFs auto-deleted 90 days after `last_accessed_at`. Users can manually delete a contract from the dashboard — triggers ON DELETE CASCADE on all related tables and a Storage object deletion.
 
 ---
 
@@ -717,34 +883,50 @@ auth.users
 
 ### LLM Provider
 
-**Provider:** OpenAI  
-**Model:** GPT-4o  
-**Context window:** 128,000 tokens  
-**API mode:** `response_format: { type: "json_object" }` for extraction; standard text for chat  
-
----
+| Attribute | Value |
+|---|---|
+| Provider | OpenAI |
+| Model | `gpt-4o` |
+| Context window | 128,000 tokens |
+| Extraction mode | `response_format: { type: "json_object" }` |
+| Chat mode | Standard text (no JSON mode) |
+| API key | `OPENAI_API_KEY` (server-only env var; never exposed to client) |
 
 ### Key Term Extraction
 
-**Goal:** Extract a structured list of key terms from the contract text.
-
-**Technique:** Few-shot prompting — 3 labelled NDA examples and 3 labelled MSA examples embedded in the system prompt.
+**Technique:** Few-shot prompting. 3 labelled NDA examples and 3 labelled MSA examples embedded verbatim in the system prompt (`lib/ai/prompts/nda-extraction.ts` and `lib/ai/prompts/msa-extraction.ts`).
 
 **Parameters:**
-| Parameter | Value |
-|---|---|
-| `model` | `gpt-4o` |
-| `temperature` | `0.1` |
-| `max_tokens` | `2000` |
-| `response_format` | `{ type: "json_object" }` |
 
-**Input to model:**
+| Parameter | Value | Rationale |
+|---|---|---|
+| `temperature` | `0.1` | Low = deterministic, structured output; minimises fabrication |
+| `max_tokens` | `2000` | Bounds output cost; enough for 10–17 terms with all fields |
+| `response_format` | `{ type: "json_object" }` | Eliminates free-text wrapping around JSON |
+
+**Input structure sent to OpenAI:**
 ```
-System prompt: [Contract-type-specific few-shot examples + extraction instruction]
-User message: [Full contract text with [PAGE N] markers] + [Standard term list] + [Custom terms list (if any)]
+[system]:
+  NDA/MSA-specific few-shot examples + schema definition
+  (3 examples each: contract excerpt → request → exact JSON response)
+
+[user]:
+  CONTRACT TEXT:
+  [PAGE 1]
+  This Agreement is entered into...
+  [PAGE 2]
+  ...
+
+  Extract the following standard terms: Parties, Effective Date, ...
+
+  Also extract the following additional terms: Non-compete radius, Arbitration clause
+  (appended only if custom_terms.length > 0)
+
+  Return a JSON object with a "terms" array. Each term must include:
+  term_name, value, page_number, confidence_score (0–100), source_sentence.
 ```
 
-**Output schema:**
+**Output schema (validated by Zod in `lib/ai/extraction.ts`):**
 ```json
 {
   "terms": [
@@ -759,144 +941,181 @@ User message: [Full contract text with [PAGE N] markers] + [Standard term list] 
 }
 ```
 
-**NDA standard terms (10):**
-Parties, Effective Date, Confidentiality Obligations, Permitted Disclosures, Term & Duration, Governing Law, Jurisdiction, IP Ownership, Non-Solicitation, Breach & Remedy
-
-**MSA standard terms (12):**
-Parties, Service Scope, Payment Terms, Invoice Schedule, Late Payment Penalty, Liability Cap, Indemnification, IP Ownership, Termination Clause, Governing Law, Dispute Resolution, Notice Period
-
-**Custom terms:** Appended to the standard term list in the user message with the instruction: "Also extract the following additional terms: [term1, term2, ...]"
-
-**Error recovery (JSON parse failure):**
-```
-Attempt 1 → call extraction
-Attempt 2 (if JSON parse fails) → retry with corrective prompt:
-  "Your previous response was not valid JSON. Return only a JSON object with a 'terms' array, no explanation."
-Attempt 3 (if still failing) → return 504, set contracts.status = 'error'
+**Not-found term convention:** When a term is absent from the document:
+```json
+{ "term_name": "IP Ownership", "value": "Not found", "page_number": 0, "confidence_score": 0, "source_sentence": "" }
 ```
 
----
+**Standard term lists:**
 
-### Contract Chat (Q&A)
+| Contract Type | Standard Terms |
+|---|---|
+| NDA (10 terms) | Parties, Effective Date, Confidentiality Obligations, Permitted Disclosures, Term & Duration, Governing Law, Jurisdiction, IP Ownership, Non-Solicitation, Breach & Remedy |
+| MSA (12 terms) | Parties, Service Scope, Payment Terms, Invoice Schedule, Late Payment Penalty, Liability Cap, Indemnification, IP Ownership, Termination Clause, Governing Law, Dispute Resolution, Notice Period |
 
-**Goal:** Answer user questions strictly from the uploaded contract text; cite the page number.
+**JSON parse retry logic (in `lib/ai/extraction.ts`):**
+```
+Attempt 1: Standard extraction call
+  → Success: Zod validate → return terms
+  → JSON parse failure:
 
-**Technique:** Full-context (no chunking at MVP) — entire `contract_text` passed on every turn.
+Attempt 2: Add corrective message:
+  "Your previous response was not valid JSON.
+   Return only a JSON object with a 'terms' array, no explanation."
+  → Success: Zod validate → return terms
+  → Failure:
+
+Attempt 3: Same corrective message
+  → Success: Zod validate → return terms
+  → Failure:
+
+After 3 failures:
+  throw Error with code: 'AI_ERROR'
+  → Route: UPDATE contracts SET status = 'error'
+  → Return 500 AI_ERROR to client
+  → Client shows error banner: "AI processing failed. Please try again."
+    with "Reprocess" button (user can retry without re-uploading)
+```
+
+### Contract Chat
+
+**Technique:** Full-context (no chunking at MVP). The entire `contract_text` (≤15,000 tokens) is passed in the system prompt on every turn.
 
 **Parameters:**
-| Parameter | Value |
-|---|---|
-| `model` | `gpt-4o` |
-| `temperature` | `0.4` |
-| `max_tokens` | `1000` |
 
-**System prompt:**
+| Parameter | Value | Rationale |
+|---|---|---|
+| `temperature` | `0.4` | Slight warmth for natural conversational tone |
+| `max_tokens` | `1000` | Concise answers; Q&A doesn't need long outputs |
+
+**System prompt (from `lib/ai/prompts/chat-system.ts`):**
 ```
-You are a contract analysis assistant. Answer questions strictly from the document text provided below.
-Do not use any general legal knowledge. If the answer is not in the document, say exactly:
-"I cannot find this in the document."
-Every response must end with a source citation in the format: [Page X]
-Begin every response with: "Based on the document, ..."
+You are a contract analysis assistant. Your role is to answer questions strictly based
+on the document text provided below. You must not use any external legal knowledge or
+make assumptions beyond what is explicitly stated in the document.
+
+RULES:
+1. Answer ONLY from the document text below. Do not draw on general legal knowledge.
+2. If the answer is not in the document, respond with exactly:
+   "I cannot find this in the document."
+3. Every response MUST end with a source citation in the format: [Page X]
+4. Begin every response with: "Based on the document, ..."
+5. If multiple pages are relevant, cite the most specific one: [Page X]
+6. Keep responses concise and in plain English — avoid legal jargon where possible.
+
+CONTRACT DOCUMENT:
+{contractText}
 ```
 
-**Message structure sent to OpenAI:**
+**Message array structure:**
 ```
-[system] → system prompt + full contract_text
-[user]   → first user message
-[assistant] → first AI response
+[{ role: 'system', content: systemPrompt_with_contractText }]
+[{ role: 'user', content: first_user_message }]
+[{ role: 'assistant', content: first_ai_response }]
 ...
-[user]   → latest user message (up to 200 messages total)
+[{ role: 'user', content: new_user_message }]
 ```
 
-**Query classification** (`lib/ai/classifier.ts`):
-- `contract` — question is about the document (default)
-- `history` — question is about the conversation itself ("what did you say earlier about X?")
-- `both` — mixed reference
-Classification is a simple keyword/pattern match inline in the classifier; no extra OpenAI call.
+Up to 200 messages from DB history, fetched ascending and passed on every turn.
 
----
+**Query classification (`lib/ai/classifier.ts`):**
+Inline keyword/pattern match — no extra OpenAI call:
+- `history`: matches patterns like "what did you say earlier", "you mentioned", "in your last response"
+- `contract` (default): everything else
+- `both`: history pattern matches AND contains contract keywords (contract, clause, term, section, page)
+
+At MVP, classification is included in the response for analytics. Full context + history is always passed regardless of classification.
 
 ### Confidence Scoring
 
-- Confidence is **self-reported** by the model as part of the extraction JSON (0.0–100.0 scale)
-- No separate inference call for confidence
-- UI colour coding: Green ≥ 80%, Amber 50–79%, Red < 50%
-- Terms with confidence < 50%: ⚠️ icon, non-dismissible tooltip, PDF auto-highlight
-
----
+- Self-reported by GPT-4o as part of the extraction JSON — no separate inference call
+- Scale: 0.0–100.0 (stored as `numeric(5,2)` in `key_terms.confidence_score`)
+- UI colour thresholds (defined in `lib/constants.ts`):
+  - `CONFIDENCE_THRESHOLD_HIGH = 80` → Green (`#13A10E`)
+  - `CONFIDENCE_THRESHOLD_LOW = 50` → Amber below 80, Red below 50 (`#FFAA33` / `#D13438`)
+- Low-confidence (< 50%): ⚠️ icon (AlertTriangle), non-dismissible tooltip, PDF viewer auto-highlights nearest matching page span
 
 ### Cost Controls
 
-| Control | Value |
-|---|---|
-| Max contract size | 15,000 tokens (hard reject) |
-| Max custom terms | 5 per analysis |
-| Max extraction output | 2,000 tokens |
-| Max chat output | 1,000 tokens |
-| Rate limit (extraction) | 20 calls/user/hour |
-| Rate limit (chat) | 60 calls/user/hour |
-| Target cost per analysis | ≤ $0.25 ($0.20 extraction + $0.05 buffer) |
+| Control | Value | Enforced In |
+|---|---|---|
+| Max contract size | 15,000 tokens | `lib/pdf/extractor.ts` — throws CONTRACT_TOO_LONG |
+| Max custom terms | 5 per analysis | `lib/validation/process.schema.ts` + custom-terms route |
+| Extraction output cap | 2,000 tokens | `OPENAI_EXTRACTION_MAX_TOKENS = 2000` in constants |
+| Chat output cap | 1,000 tokens | `OPENAI_CHAT_MAX_TOKENS = 1000` in constants |
+| Rate limit (extraction) | 20 calls/user/hour | `lib/security/rateLimiter.ts` via rate_limit_events table |
+| Rate limit (chat) | 60 messages/user/hour | Same rate limiter |
 
-**Cost estimate per analysis (GPT-4o):**
-- Input: ~15,000 tokens × $0.005/1k = $0.075
-- Output: ~1,500 tokens × $0.015/1k = $0.022
-- **Total extraction: ~$0.097** (well within $0.20 target)
+**Cost estimate for a 20-page (15,000 token) contract:**
+- Extraction input: ~15,000 tokens × $0.005/1k = $0.075
+- Extraction output: ~1,500 tokens × $0.015/1k = $0.023
+- Total extraction: ~$0.098 (well within $0.20 per-analysis target)
 
----
-
-### Hallucination Guardrails Summary
+### Hallucination Guardrails
 
 | Layer | Guardrail |
 |---|---|
-| Extraction | Temperature 0.1 + JSON mode → minimises fabrication |
-| Extraction | `source_sentence` required — term without source treated as unreliable |
-| Extraction | Self-reported confidence score shown; < 50% triggers ⚠️ warning |
-| Chat | System prompt: "Answer only from the document text" |
-| Chat | Mandatory `[Page X]` citation per response |
-| Chat | "Based on the document..." prefix |
-| Chat | "I cannot find this in the document" is the correct response when absent |
-| UI | Inline edit corrects AI errors; original `ai_value` preserved for improvement loop |
-| UI | "Not legal advice" disclaimer on every results page |
-| Testing | Automated regression test: question about topic not in doc → assert "cannot find" response |
+| Extraction — model config | Temperature 0.1 + JSON mode → deterministic, structured; minimises fabrication |
+| Extraction — prompt | Few-shot examples demonstrate correct schema and "Not found" fallback |
+| Extraction — output | `source_sentence` required for every term; missing = unreliable |
+| Extraction — UI | Self-reported confidence score displayed; < 50% triggers ⚠️ warning and tooltip |
+| Extraction — UI | Expandable "Why?" section shows verbatim source sentence |
+| Chat — system prompt | "Answer ONLY from the document text. Do not draw on general legal knowledge." |
+| Chat — mandatory citation | Every response must end with `[Page X]`; UI appends "Source: unknown" if absent |
+| Chat — prefix | "Based on the document, ..." prefix on every response |
+| Chat — fallback | "I cannot find this in the document." is the required response for absent information |
+| Chat — input | `sanitizeForLLM()` strips prompt injection patterns before every OpenAI call |
+| UI | Inline term editing — user can correct AI errors; original `ai_value` preserved in DB |
+| UI | "Not legal advice" disclaimer always visible on results page |
+| Testing | Automated Playwright test: question about topic not in document → assert "I cannot find this" |
 
 ---
 
 ## 9. API Specification
 
-All endpoints:
-- Base URL: `/api`
-- Auth: Bearer token via Supabase session (verified via `supabase.auth.getUser()` in each route)
-- Content-Type: `application/json` unless noted
-- All responses: `{ data: ..., error: null }` on success / `{ data: null, error: { code, message } }` on failure
+**Base URL:** `/api`
+
+**Authentication:** All endpoints require a valid Supabase session. Each route calls `requireAuth()` which invokes `supabase.auth.getUser()` (JWT validated with Supabase server). Returns 401 if no session.
+
+**Response envelope:**
+- Success: `{ "data": { ... }, "error": null }`
+- Failure: `{ "data": null, "error": { "code": "ERROR_CODE", "message": "Human-readable message." } }`
+
+**Content-Type:** `application/json` unless noted as `multipart/form-data`.
 
 ---
 
 ### POST `/api/contracts/upload`
 
-**Purpose:** Validate and upload a PDF contract; extract text; create DB record.  
-**Auth:** Required  
-**Content-Type:** `multipart/form-data`
+**Purpose:** Validate and upload a PDF contract; extract text with page markers; create DB record. Return `contract_id` to trigger processing flow.
+
+**Auth:** Required | **Content-Type:** `multipart/form-data`
 
 **Request fields:**
+
 | Field | Type | Validation |
 |---|---|---|
-| `file` | `File` (PDF) | Required; ≤10 MB; `.pdf` extension; text-layer (validated post-extraction) |
-| `contract_type` | `string` | Required; enum: `nda` \| `msa` |
+| `file` | `File` (PDF) | Required; ≤ 10,485,760 bytes; extension `.pdf` |
+| `contract_type` | `string` | Required; enum: `'nda'` \| `'msa'` |
 
 **Processing steps:**
-1. Validate file size (≤10 MB) and extension
-2. `pdf-parse` extracts text + page count
-3. If word count < 100 → reject (scanned PDF)
-4. If token count > 15,000 → reject (too long)
-5. `INSERT INTO contracts` (status = `'pending'`)
-6. Non-blocking: upload PDF to Supabase Storage; update `file_path` if successful
-7. Return `contract_id`
+1. `requireAuth()` — 401 if no valid session
+2. `validateFile(file)` — rejects non-PDF extension; rejects > 10 MB
+3. `uploadBodySchema.safeParse({ contract_type })` — rejects invalid type
+4. Extract buffer and call `extractPDFText(buffer)`:
+   - Per-page render via pdf-parse; join with `[PAGE N]\n` markers
+   - `pageCount > 20` → throws TOO_MANY_PAGES
+   - `wordCount < 100` → throws SCANNED_PDF
+   - `tokenCount > 15000` → throws CONTRACT_TOO_LONG
+5. `INSERT INTO contracts` with `status = 'pending'`
+6. Non-blocking: `uploadToStorage()` → on success UPDATE `file_path`; on failure: silent log
+7. Return 201
 
 **Success Response (201):**
 ```json
 {
   "data": {
-    "contract_id": "uuid",
+    "contract_id": "a3f7e2b1-...",
     "status": "pending",
     "page_count": 12,
     "token_count": 8400
@@ -906,47 +1125,72 @@ All endpoints:
 ```
 
 **Error Responses:**
-| Status | Code | Message |
+
+| HTTP | Code | Message |
 |---|---|---|
+| 400 | `INVALID_FILE_TYPE` | "Only PDF files are accepted." |
 | 400 | `FILE_TOO_LARGE` | "File exceeds the 10 MB limit." |
 | 400 | `TOO_MANY_PAGES` | "Contract exceeds the 20-page limit." |
 | 400 | `SCANNED_PDF` | "Scanned PDFs are not supported yet. Please upload a text-layer PDF." |
 | 400 | `CONTRACT_TOO_LONG` | "Contract exceeds the 15,000 token limit for MVP." |
-| 400 | `INVALID_FILE_TYPE` | "Only PDF files are accepted." |
 | 400 | `INVALID_CONTRACT_TYPE` | "contract_type must be 'nda' or 'msa'." |
 | 401 | `UNAUTHORIZED` | "Authentication required." |
 | 500 | `INTERNAL_ERROR` | "Upload failed. Please try again." |
 
 ---
 
+### POST `/api/contracts/custom-terms`
+
+**Purpose:** Save a custom key term to be included in the next extraction run.
+
+**Auth:** Required
+
+**Request body:**
+```json
+{ "contract_id": "uuid", "term_name": "Non-compete radius" }
+```
+
+**Validation:** `contract_id` — UUID, must exist and belong to `auth.uid()`; `term_name` — non-empty string ≤ 100 chars; COUNT check: ≥ 5 existing → 400 TOO_MANY_CUSTOM_TERMS.
+
+**Success (201):**
+```json
+{ "data": { "id": "uuid", "term_name": "Non-compete radius" }, "error": null }
+```
+
+**Error Responses:** 400 TOO_MANY_CUSTOM_TERMS, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 CONTRACT_NOT_FOUND
+
+---
+
 ### POST `/api/contracts/process`
 
-**Purpose:** Run AI key-term extraction on an uploaded contract.  
+**Purpose:** Run AI key-term extraction on an uploaded contract; store results in `key_terms`.
+
 **Auth:** Required
 
 **Request body:**
 ```json
 {
-  "contract_id": "uuid",
+  "contract_id": "a3f7e2b1-...",
   "custom_terms": ["Non-compete radius", "Arbitration clause"]
 }
 ```
 
-**Validation:**
-- `contract_id`: UUID, must exist and belong to authenticated user
-- `custom_terms`: Array, max 5 items, each ≤100 chars (optional)
+**Validation:** `contract_id` — UUID; `custom_terms` — optional array ≤ 5 items, each string ≤ 100 chars.
 
 **Processing steps:**
-1. Fetch `contract_text` and `contract_type` from `contracts` table (verify ownership)
-2. Fetch any pre-saved `custom_key_terms` for this contract
-3. Merge request `custom_terms` with DB custom terms (deduplicate)
-4. `UPDATE contracts SET status = 'processing'`
-5. Build few-shot prompt (NDA or MSA prompt template)
-6. Call OpenAI GPT-4o with retry logic (max 3 attempts)
-7. Parse JSON response → validate schema (Zod)
-8. `INSERT INTO key_terms` (one row per term; `is_manual = true` for custom terms)
-9. `UPDATE contracts SET status = 'completed'`
-10. Return key_terms array
+1. `requireAuth()` → 401
+2. `processSchema.safeParse(body)` → 400
+3. `checkRateLimit(user.id, 'contracts/process')` → 429 if exceeded
+4. SELECT `contract_text`, `contract_type` WHERE `id = contract_id AND user_id = user.id` → 404 if not found
+5. SELECT existing `custom_key_terms` for contract
+6. Deduplicate: `[...dbCustomTerms, ...requestCustomTerms]`
+7. UPDATE `contracts` SET `status = 'processing'`
+8. `runExtraction()`: build prompt → call OpenAI → 3-attempt retry → Zod validate → throw AI_ERROR after 3 failures
+9. Batch `INSERT INTO key_terms` (`is_manual = true` for custom terms)
+10. UPDATE `contracts` SET `status = 'completed'`
+11. Return 200
+
+On failure at step 8: UPDATE `contracts` SET `status = 'error'`; return 500 or 504.
 
 **Success Response (200):**
 ```json
@@ -955,13 +1199,17 @@ All endpoints:
     "key_terms": [
       {
         "id": "uuid",
+        "contract_id": "uuid",
+        "user_id": "uuid",
         "term_name": "Governing Law",
-        "value": "Laws of New York",
+        "value": "Laws of the State of New York",
+        "ai_value": null,
         "page_number": 4,
         "confidence_score": 92.5,
-        "source_sentence": "This Agreement shall be governed by the laws of New York.",
+        "source_sentence": "This Agreement shall be governed by the laws of the State of New York.",
         "is_manual": false,
-        "is_edited": false
+        "is_edited": false,
+        "created_at": "2026-10-05T12:00:00Z"
       }
     ]
   },
@@ -969,25 +1217,39 @@ All endpoints:
 }
 ```
 
+Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
 **Error Responses:**
-| Status | Code | Message |
+
+| HTTP | Code | Message |
 |---|---|---|
 | 400 | `TOO_MANY_CUSTOM_TERMS` | "Maximum 5 custom terms allowed." |
 | 401 | `UNAUTHORIZED` | "Authentication required." |
 | 403 | `FORBIDDEN` | "Contract does not belong to this user." |
 | 404 | `CONTRACT_NOT_FOUND` | "Contract not found." |
 | 429 | `RATE_LIMIT_EXCEEDED` | "Too many requests. Please wait before processing another contract." |
-| 504 | `AI_TIMEOUT` | "AI processing timed out. Your contract has been saved — please try again." |
 | 500 | `AI_ERROR` | "AI processing failed. Please try again." |
+| 504 | `AI_TIMEOUT` | "AI processing timed out. Your contract has been saved — please try again." |
 
 ---
 
 ### GET `/api/contracts/[id]`
 
-**Purpose:** Fetch a contract with its key terms and chat session.  
-**Auth:** Required
+**Purpose:** Fetch a single contract with its key terms, chat session ID, existing feedback, and a signed URL for the PDF viewer.
 
-**Response (200):**
+**Auth:** Required | **Path parameter:** `id` — contract UUID
+
+**Processing steps:**
+1. `requireAuth()` → 401
+2. SELECT contract WHERE `id = id AND user_id = user.id` → 404 if not found
+3. Non-blocking: UPDATE `contracts` SET `last_accessed_at = now()`
+4. If `file_path` not null: `createAdminClient().storage.createSignedUrl(file_path, 3600)`
+5. SELECT `key_terms` WHERE `contract_id = id` ORDER BY `created_at ASC`
+6. SELECT `id` FROM `chat_sessions` WHERE `contract_id = id AND user_id = user.id`
+7. SELECT `rating` FROM `user_feedback` WHERE `contract_id = id AND user_id = user.id`
+8. Return 200
+
+**Success Response (200):**
 ```json
 {
   "data": {
@@ -997,59 +1259,81 @@ All endpoints:
       "contract_type": "nda",
       "status": "completed",
       "page_count": 8,
-      "created_at": "2026-07-14T10:00:00Z",
-      "signed_url": "https://...(1-hour expiry) or null if Storage unavailable"
+      "created_at": "2026-10-01T10:00:00Z",
+      "contract_text": "[PAGE 1]\nThis Agreement...",
+      "signed_url": "https://...supabase.co/storage/v1/object/sign/...?token=..."
     },
-    "key_terms": [...],
-    "chat_session": { "id": "uuid" }
+    "key_terms": [{ "id": "...", "term_name": "...", "..." : "..." }],
+    "chat_session_id": "uuid | null",
+    "existing_feedback": { "rating": "thumbs_up" }
   },
   "error": null
 }
 ```
 
-**Notes:** `signed_url` is generated server-side (Supabase Storage `createSignedUrl`); null if `file_path` is null or Storage is unavailable.
+Note: `signed_url` is null if `file_path` is null or `createSignedUrl` fails. Null triggers `TextViewerFallback` — no error shown.
+
+**Error Responses:** 401 UNAUTHORIZED, 403 FORBIDDEN, 404 CONTRACT_NOT_FOUND
 
 ---
 
 ### PATCH `/api/key-terms/[id]`
 
-**Purpose:** Update an extracted key term (inline edit).  
-**Auth:** Required
+**Purpose:** Update an extracted key term value (inline edit); preserve original AI value.
+
+**Auth:** Required | **Path parameter:** `id` — key_term UUID
 
 **Request body:**
 ```json
 { "value": "New York State" }
 ```
 
-**Validation:**
-- `value`: string, non-empty, ≤1000 chars
-
-**Processing:**
-1. Verify `key_terms.user_id = auth.uid()`
-2. If `is_edited = false`: store current `value` in `ai_value`
-3. `UPDATE key_terms SET value='...', is_edited=true`
+**Processing steps:**
+1. `requireAuth()` → 401
+2. `keyTermPatchSchema.safeParse({ value })` — non-empty, ≤ 1000 chars → 400
+3. SELECT term WHERE `id = id` → 404; 403 if `user_id ≠ user.id`
+4. If `is_edited = false`: set `ai_value = current value` (preserve original)
+5. UPDATE: `value = new_value`, `is_edited = true`
+6. Return 200
 
 **Success Response (200):**
 ```json
 {
-  "data": { "id": "uuid", "value": "New York State", "is_edited": true, "ai_value": "Laws of New York" },
+  "data": {
+    "id": "uuid",
+    "value": "New York State",
+    "ai_value": "Laws of the State of New York",
+    "is_edited": true
+  },
   "error": null
 }
 ```
+
+**Error Responses:**
+
+| HTTP | Code | Message |
+|---|---|---|
+| 400 | `INVALID_VALUE` | "Value cannot be empty." |
+| 400 | `VALUE_TOO_LONG` | "Value exceeds 1,000 character limit." |
+| 401 | `UNAUTHORIZED` | "Authentication required." |
+| 403 | `FORBIDDEN` | "Key term does not belong to this user." |
+| 404 | `NOT_FOUND` | "Key term not found." |
 
 ---
 
 ### POST `/api/chat/sessions`
 
-**Purpose:** Get or create a chat session for a contract.  
+**Purpose:** Get or create a chat session for a contract (idempotent).
+
 **Auth:** Required
 
-**Request body:**
-```json
-{ "contract_id": "uuid" }
-```
+**Request body:** `{ "contract_id": "uuid" }`
 
-**Processing:** `INSERT INTO chat_sessions ... ON CONFLICT (contract_id) DO NOTHING` — returns existing or new session.
+**Processing:**
+1. Verify contract ownership → 403 if not found
+2. `INSERT INTO chat_sessions (contract_id, user_id) ON CONFLICT (contract_id) DO NOTHING`
+3. SELECT `id` FROM `chat_sessions` WHERE `contract_id = ... AND user_id = ...`
+4. Return 200
 
 **Success Response (200):**
 ```json
@@ -1058,66 +1342,24 @@ All endpoints:
 
 ---
 
-### POST `/api/chat/message`
+### GET `/api/chat/[sessionId]/messages`
 
-**Purpose:** Send a chat message and get an AI response.  
-**Auth:** Required
+**Purpose:** Fetch all messages for a chat session (to rehydrate chat history on page load).
 
-**Request body:**
-```json
-{
-  "contract_id": "uuid",
-  "session_id": "uuid",
-  "content": "What happens if I breach the NDA?"
-}
-```
-
-**Validation:**
-- `content`: string, non-empty, ≤4000 chars
+**Auth:** Required | **Path parameter:** `sessionId` — chat_session UUID
 
 **Processing:**
-1. Verify contract ownership
-2. Sanitise `content` for prompt injection (strip `###`, `<|`, system-marker patterns)
-3. Fetch all `chat_messages` for session (ascending, up to 200)
-4. Classify query → `'contract' | 'history' | 'both'`
-5. Build OpenAI messages array (system + contract_text + history + new user message)
-6. Call GPT-4o (temp 0.4, max 1000 tokens)
-7. `INSERT INTO chat_messages` (user message + assistant response)
-8. Return assistant response
+1. Verify session ownership
+2. SELECT `id, role, content, created_at` FROM `chat_messages` WHERE `session_id = sessionId` ORDER BY `created_at ASC`
+3. Return 200
 
 **Success Response (200):**
 ```json
 {
   "data": {
-    "message_id": "uuid",
-    "content": "Based on the document, breach of confidentiality obligations triggers... [Page 3]",
-    "created_at": "2026-07-14T10:05:00Z"
-  },
-  "error": null
-}
-```
-
-**Error Responses:**
-| Status | Code | Message |
-|---|---|---|
-| 400 | `INJECTION_DETECTED` | "Invalid message content." |
-| 429 | `RATE_LIMIT_EXCEEDED` | "Too many chat messages. Please wait a moment." |
-| 504 | `CHAT_TIMEOUT` | "Response timed out. Please try again." |
-
----
-
-### GET `/api/chat/[sessionId]/messages`
-
-**Purpose:** Fetch all messages for a chat session (for rehydrating chat on page load).  
-**Auth:** Required
-
-**Response (200):**
-```json
-{
-  "data": {
     "messages": [
-      { "id": "uuid", "role": "user", "content": "...", "created_at": "..." },
-      { "id": "uuid", "role": "assistant", "content": "...", "created_at": "..." }
+      { "id": "uuid", "role": "user", "content": "What happens if I breach the NDA?", "created_at": "..." },
+      { "id": "uuid", "role": "assistant", "content": "Based on the document, breach of confidentiality... [Page 3]", "created_at": "..." }
     ]
   },
   "error": null
@@ -1126,9 +1368,71 @@ All endpoints:
 
 ---
 
+### POST `/api/chat/message`
+
+**Purpose:** Send a user message and receive an AI response grounded in the contract.
+
+**Auth:** Required
+
+**Route exports:** `export const runtime = 'nodejs'` and `export const maxDuration = 60`
+
+**Request body:**
+```json
+{
+  "contract_id": "uuid",
+  "session_id": "uuid",
+  "content": "What happens if I breach this NDA?"
+}
+```
+
+**Validation:** `contract_id`, `session_id` — UUIDs; `content` — non-empty string ≤ 4000 chars.
+
+**Processing steps:**
+1. `requireAuth()` → 401
+2. `chatMessageSchema.safeParse(body)` → 400
+3. `checkRateLimit(user.id, 'chat/message')` → 429
+4. `sanitizeForLLM(content)` → 400 INJECTION_DETECTED if empty after sanitise
+5. Parallel: fetch `contract.contract_text` + verify `chatSession` ownership → 403 if either fails
+6. SELECT history from `chat_messages` (ASC, LIMIT 200)
+7. `classifyQuery(sanitised)` → `'contract'` | `'history'` | `'both'`
+8. `buildChatMessages({ contractText, history, newUserMessage })`
+9. `callChat(messages)` — GPT-4o, temp 0.4, max 1000 tokens
+10. INSERT user message → INSERT assistant response
+11. Return 200
+
+**Success Response (200):**
+```json
+{
+  "data": {
+    "message_id": "uuid",
+    "content": "Based on the document, breach of confidentiality obligations triggers a right to seek injunctive relief without posting bond. [Page 3]",
+    "created_at": "2026-10-05T12:05:00Z",
+    "query_type": "contract"
+  },
+  "error": null
+}
+```
+
+Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+**Error Responses:**
+
+| HTTP | Code | Message |
+|---|---|---|
+| 400 | `INVALID_MESSAGE` | "Message cannot be empty." |
+| 400 | `MESSAGE_TOO_LONG` | "Message exceeds 4,000 character limit." |
+| 400 | `INJECTION_DETECTED` | "Invalid message content." |
+| 401 | `UNAUTHORIZED` | "Authentication required." |
+| 403 | `FORBIDDEN` | "Session or contract does not belong to this user." |
+| 429 | `RATE_LIMIT_EXCEEDED` | "Too many chat messages. Please wait a moment." |
+| 504 | `CHAT_TIMEOUT` | "Response timed out. Please try again." |
+
+---
+
 ### POST `/api/feedback`
 
-**Purpose:** Submit a thumbs up/down rating and optional comment for a contract review.  
+**Purpose:** Submit a thumbs-up or thumbs-down rating with optional comment.
+
 **Auth:** Required
 
 **Request body:**
@@ -1140,131 +1444,138 @@ All endpoints:
 }
 ```
 
-**Validation:**
-- `rating`: enum `'thumbs_up' | 'thumbs_down'`
-- `comment`: optional string, ≤2000 chars
+**Validation:** `contract_id` — UUID; `rating` — enum `'thumbs_up'` | `'thumbs_down'`; `comment` — optional string ≤ 2000 chars.
+
+**Processing steps:**
+1. Verify contract ownership → 403
+2. Check for existing feedback → 409 ALREADY_SUBMITTED
+3. `INSERT INTO user_feedback`
+4. Return 201
 
 **Success Response (201):**
 ```json
 { "data": { "feedback_id": "uuid" }, "error": null }
 ```
 
+**Error Responses:** 400 INVALID_RATING, 401 UNAUTHORIZED, 403 FORBIDDEN, 409 ALREADY_SUBMITTED
+
+---
+
+### GET `/api/contracts/[id]/export` *(v1.1 — deferred)*
+
+**Purpose:** Generate and return a downloadable CSV or PDF report of key terms.
+
+**Query parameter:** `format` — `'csv'` | `'pdf'`
+
+**Note:** Not implemented at MVP. Returns a binary file download within 5 seconds.
+
 ---
 
 ## 10. Feature Breakdown
 
-### Phase 1 — MVP Core (P0 Stories)
+### Phase 1 — MVP Core (v0.1–v0.4)
 
-**US-001 — Authentication**
-- Sign up (email/password), sign in, sign out via Supabase Auth
-- Session persistence via Supabase session tokens
-- Protected routes via `middleware.ts`
-- Acceptance: Auth flow completes within 10 seconds; invalid credentials return clear error
-- Dependencies: Supabase project provisioned
+#### v0.1 — Foundation (Weeks 1–2)
 
-**US-002 — PDF Upload + Text Extraction**
-- Upload page: contract type dropdown + drag-and-drop / file picker
-- Client-side validation (≤10 MB, .pdf extension)
-- Server-side: pdf-parse extraction with `[PAGE N]` markers
-- Scanned PDF detection (< 100 words) → graceful error
-- Token limit check (> 15,000 tokens) → clear rejection message
-- Non-blocking Storage upload; text stored in DB regardless
-- Acceptance: Accepts ≤10 MB, ≤20 pages; extraction completes ≤30s P95
-- Dependencies: pdf-parse, Supabase Storage bucket with RLS
+**US-001: Email/password auth (sign up, sign in, sign out, session persistence)**
+- Acceptance: Auth flow completes ≤ 10 seconds; invalid credentials show inline error; protected routes redirect unauthenticated users; session persists across page refreshes
+- Dependencies: Supabase project provisioned; `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` set
+- Implementation: `app/auth/login/page.tsx`, `app/auth/signup/page.tsx`, `middleware.ts`, `lib/supabase/client.ts`, `components/layout/Nav.tsx`
 
-**US-003 — Page Attribution**
-- Each extracted term includes a `page_number` (1-indexed)
-- Clicking the page number in the key terms panel scrolls the PDF viewer to that page
-- Text viewer fallback also supports page navigation
-- Acceptance: Every extracted term displays a page number; clicking scrolls the viewer
-- Dependencies: US-002, PDFViewer component, TextViewerFallback component
+**FR-13/FR-14: Supabase schema with RLS + Storage bucket**
+- Acceptance: All 7 tables have RLS enabled; storage.objects policies restrict to `auth.uid()::text = (storage.foldername(name))[1]`; file executes cleanly on a fresh project
+- Dependencies: None
+- Implementation: `docs/specs/supabase-schema.sql`
 
-**US-004 — Confidence Score Display**
-- Each term shows a colour-coded confidence score (0–100%)
-- Green ≥ 80%, Amber 50–79%, Red < 50%
-- Terms with confidence < 50%: ⚠️ icon + non-dismissible tooltip + PDF auto-highlight
-- "Why?" expandable section shows `source_sentence`
-- Acceptance: Scores shown per term; < 50% triggers ⚠️ with tooltip
+**Landing page (static):** Hero, value proposition, sign-in/sign-up CTAs. Dependencies: Nav component.
+
+#### v0.2 — Core Review Flow (Weeks 3–5)
+
+**US-002: PDF upload + text extraction**
+- Acceptance: Accepts ≤ 10 MB, ≤ 20 pages; rejects scanned PDFs (< 100 words) with "Scanned PDFs are not supported yet"; rejects > 15,000 tokens; extraction ≤ 30s P95; text stored in `contracts.contract_text` with `[PAGE N]` markers
+- Dependencies: Supabase Storage bucket, pdf-parse, `lib/pdf/extractor.ts`
+- Implementation: `app/(protected)/upload/page.tsx`, `app/api/contracts/upload/route.ts`, `lib/pdf/extractor.ts`, `lib/validation/upload.schema.ts`
+
+**US-003: Page attribution per key term**
+- Acceptance: Every extracted term shows 1-indexed page number; clicking page number scrolls active viewer to that page
+- Dependencies: US-002, extraction pipeline returning `page_number`
+- Implementation: `lib/ai/extraction.ts`, `components/contracts/KeyTermCard.tsx`, `components/viewer/PDFViewer.tsx`, `components/viewer/TextViewerFallback.tsx`
+
+**US-004: Confidence score display**
+- Acceptance: Colour-coded score per term (green ≥ 80%, amber 50–79%, red < 50%); < 50% shows ⚠️ with non-dismissible tooltip
 - Dependencies: US-002, OpenAI extraction returning `confidence_score`
+- Implementation: `components/contracts/ConfidenceBar.tsx`, `components/contracts/KeyTermCard.tsx`, `components/ui/Tooltip.tsx`
 
-**US-005 — Custom Key Terms**
-- "+ Add Key Term" button on pre-processing preview page
-- Up to 5 custom terms; each shows with "Custom" badge in preview list
-- Custom terms stored in `custom_key_terms` table
-- Extraction prompt includes custom terms alongside standard terms
-- Results include custom terms with same structure (value, page, confidence, source_sentence)
-- Acceptance: Custom terms appear in results with same data structure; max 5 enforced
-- Dependencies: US-002, extraction pipeline
+**US-005: Custom key terms (up to 5 before processing)**
+- Acceptance: Custom terms appear in preview list with "Custom" badge; max 5 enforced with clear error; custom terms in results have same data structure as standard terms
+- Dependencies: US-002, `custom_key_terms` table
+- Implementation: `components/upload/CustomTermInput.tsx`, `components/upload/TermPreviewList.tsx`, `app/api/contracts/custom-terms/route.ts`
 
-**US-011-partial — Key Terms Panel**
-- Two-panel results layout: PDF viewer (left) + key terms panel (right)
-- Each term card: term name, value, page number, colour-coded confidence
-- Expandable "Why?" section with source sentence
-- "Not legal advice" disclaimer below panel
-- Acceptance: Panel shows ≥ 80% of standard NDA/MSA terms with values
+**US-011-partial: Key terms panel (name, value, page, confidence, source sentence)**
+- Acceptance: Panel shows ≥ 80% of standard terms with values; "Why?" expandable; "Not legal advice" disclaimer visible
 - Dependencies: US-002, US-003, US-004
+- Implementation: `components/contracts/KeyTermsPanel.tsx`, `components/contracts/KeyTermCard.tsx`, `components/contracts/SourceSentence.tsx`
 
----
+#### v0.3 — Enriched Experience (Weeks 6–8)
 
-### Phase 2 — MVP Enriched (P1 Stories)
+**US-006: Inline PDF viewer**
+- Acceptance: PDF.js renders all pages from signed URL; scrollable, zoomable; text fallback renders when signed_url is null; clicking page link scrolls the active viewer
+- Dependencies: Supabase Storage, pdfjs-dist, `public/pdf.worker.min.mjs`
+- Implementation: `components/viewer/PDFViewer.tsx`, `components/viewer/TextViewerFallback.tsx`
 
-**US-006 — Inline PDF Viewer**
-- PDF.js renders uploaded PDF from Supabase Storage signed URL (1-hour expiry)
-- Scrollable, zoomable; lazy page loading for performance
-- Text-viewer fallback: parses `[PAGE N]` markers from `contract_text`; renders each page as labelled section
-- Both viewers respond to `targetPage` prop from key-term click events
-- "Download PDF" fallback link if PDF.js rendering fails
-- Acceptance: PDF viewer renders all pages; scroll, zoom work; highlighted term references clickable
-- Dependencies: Supabase Storage, PDF.js, `file_path` in contracts table
+#### v0.4 — Chat and History (Weeks 9–11)
 
-**US-007 — Contract Chat**
-- Chat tab on results page
-- User messages right-aligned; AI responses left-aligned with "Based on the document..." prefix
-- Full contract context passed on every turn (no chunking at MVP)
-- Mandatory `[Page X]` citation on every AI response
-- "I cannot find this in the document" for absent information
-- Page citation is a clickable link → scrolls PDF viewer
-- Acceptance: Chat responds ≤15s; responses grounded in document; page citation on every response
-- Dependencies: US-002, chat_sessions + chat_messages tables, GPT-4o
+**US-007: Contract chat (Q&A)**
+- Acceptance: Responds ≤ 15s P95; every response begins "Based on the document, ..."; every response ends with `[Page X]`; "I cannot find this in the document" for absent information; page citations are clickable
+- Dependencies: US-002, `chat_sessions` + `chat_messages` tables, GPT-4o, `lib/ai/chat.ts`, `lib/ai/prompts/chat-system.ts`
+- Implementation: `components/chat/ChatInterface.tsx`, `components/chat/MessageBubble.tsx`, `app/api/chat/sessions/route.ts`, `app/api/chat/message/route.ts`, `lib/ai/chat.ts`
 
-**US-012 — Persistent Chat History**
-- Chat messages stored in `chat_messages` table in real-time
-- Revisiting `/contracts/[id]` loads full previous conversation
-- Acceptance: Chat history persists; reopening loads previous session
-- Dependencies: US-007, GET /api/chat/[sessionId]/messages
+**US-012: Persistent chat history**
+- Acceptance: Chat messages reload on page revisit; full conversation history loads in order
+- Dependencies: US-007, `app/api/chat/[sessionId]/messages/route.ts`
 
-**US-008 — Dashboard & Contract History**
-- Dashboard shows: total contracts, NDA count, MSA count
-- Sortable list: contract name, type, date uploaded, status
-- Clickable rows → open results page for that contract
-- Key terms and chat rehydrated from DB on results page load
-- Empty state for new users
-- Acceptance: Dashboard displays all contracts; clicking opens results page
-- Dependencies: contracts table, key_terms table, chat_sessions table
+**US-008: Dashboard and contract history**
+- Acceptance: Shows total, NDA/MSA counts; sortable list; clicking row opens results page; empty state for new users
+- Dependencies: `contracts` table
+- Implementation: `app/(protected)/dashboard/page.tsx`, `components/dashboard/ContractTable.tsx`, `components/dashboard/StatCard.tsx`, `components/dashboard/EmptyState.tsx`
 
-**US-009 — Inline Key Term Editing**
-- Click any term value → inline input appears
-- Save → PATCH request; term shows "Edited" badge; original `ai_value` preserved
-- Acceptance: Inline edit saves ≤2 seconds; "Edited" badge shown; original AI value stored
-- Dependencies: key_terms table (`ai_value`, `is_edited` columns), PATCH /api/key-terms/[id]
+**US-009: Inline key term editing**
+- Acceptance: Click value → input; Enter saves; Escape cancels; "Edited" badge shown; original AI value preserved; edit persists on refresh; saves ≤ 2 seconds
+- Dependencies: `key_terms` table (`ai_value`, `is_edited` columns), `PATCH /api/key-terms/[id]`
+- Implementation: `components/contracts/KeyTermCard.tsx`, `app/api/key-terms/[id]/route.ts`
 
----
+### Phase 2 — v1.0 Launch (Weeks 12–14)
 
-### Phase 3 — Backlog (P2 Stories)
+**Rate limiting:** 20 extraction/user/hour; 60 chat/user/hour
+- Acceptance: 21st extraction → 429; 61st chat → 429; rate limit headers present on all AI responses
+- Implementation: `lib/security/rateLimiter.ts`, `rate_limit_events` table
 
-**US-010 — Feedback Submission**
-- Thumbs up / thumbs down widget on results page
-- Optional text comment
-- Stored in `user_feedback` table
-- Acceptance: Feedback saved; thumbs appear on every results page
-- Dependencies: user_feedback table, POST /api/feedback
+**Prompt injection sanitisation:** Strips `###`, `<|`, `|>`, `[INST]`, `<<SYS>>`
+- Implementation: `lib/security/promptInjectionGuard.ts`
 
-**US-011 — Export Key Terms**
-- Export button → generates CSV or formatted PDF within 5 seconds
-- Downloads to browser
-- Acceptance: File downloads within 5 seconds
-- Dependencies: US-011-partial; CSV generation library
-- **Deferred to v1.1**
+**Performance target:** ≤ 30s P95 for extraction
+- Verification: Timed integration test against 50-contract eval set
+
+**Security audit:** Cross-user RLS isolation verified; signed URL expiry; API key management
+- Test: User A cannot access User B's contracts via direct URL manipulation
+
+**WCAG 2.1 AA review:** Focus rings, `aria-live` regions, `ConfidenceBar role="meter"`, Modal focus trap
+
+**Onboarding tooltips:** Contextual help on ⚠️ icon, "Why?" section, confidence bar
+
+### Phase 3 — v1.1 and v1.2 (Weeks 15–24)
+
+**US-010: Feedback submission (thumbs up/down + comment)** *(P2 — already coded)*
+- Acceptance: One submission per contract per user; 409 on second submission; "Thanks for your feedback!" shown after
+- Implementation: `components/contracts/FeedbackWidget.tsx`, `app/api/feedback/route.ts`
+
+**US-011: Export key terms to CSV / PDF report** *(v1.1)*
+- Acceptance: Export button generates file within 5 seconds; downloads to browser
+- Dependencies: CSV serialisation of `key_terms`; PDF generation library (pdfmake or @react-pdf/renderer)
+
+**v1.1 (Weeks 15–18):** Dashboard analytics charts (contracts by month, correction rate), batch upload (up to 5 contracts), onboarding modal for first-time users
+
+**v1.2 (Weeks 19–24):** Scanned PDF OCR (AWS Textract or Tesseract.js), contract comparison view, email notifications (Resend or Postmark), team workspace (multi-user with `team_id` FK on contracts)
 
 ---
 
@@ -1273,110 +1584,132 @@ All endpoints:
 ```
 contractiq/
 ├── app/
-│   ├── (auth)/                          ← Unauthenticated routes
-│   │   ├── login/
-│   │   │   └── page.jsx                 ← LoginPage
-│   │   └── signup/
-│   │       └── page.jsx                 ← SignupPage
-│   ├── (protected)/                     ← Auth-required routes (middleware guards)
+│   ├── (protected)/                      ← Auth-required routes (guarded by middleware)
+│   │   ├── layout.tsx                    ← Protected layout wrapper
+│   │   ├── contracts/[id]/
+│   │   │   └── page.tsx                  ← ResultsPage (Server Component; fetches all data)
 │   │   ├── dashboard/
-│   │   │   └── page.jsx                 ← DashboardPage
-│   │   ├── upload/
-│   │   │   └── page.jsx                 ← UploadPage (type select + PDF drop + preview)
-│   │   └── contracts/
-│   │       └── [id]/
-│   │           └── page.jsx             ← ResultsPage (viewer + key terms + chat)
+│   │   │   └── page.tsx                  ← DashboardPage (Server Component)
+│   │   └── upload/
+│   │       └── page.tsx                  ← UploadPage ('use client'; multi-step wizard)
 │   ├── api/
-│   │   ├── contracts/
-│   │   │   ├── upload/
-│   │   │   │   └── route.ts             ← POST /api/contracts/upload
-│   │   │   ├── process/
-│   │   │   │   └── route.ts             ← POST /api/contracts/process
-│   │   │   └── [id]/
-│   │   │       └── route.ts             ← GET /api/contracts/[id]
-│   │   ├── key-terms/
-│   │   │   └── [id]/
-│   │   │       └── route.ts             ← PATCH /api/key-terms/[id]
 │   │   ├── chat/
-│   │   │   ├── sessions/
-│   │   │   │   └── route.ts             ← POST /api/chat/sessions
+│   │   │   ├── [sessionId]/messages/
+│   │   │   │   └── route.ts              ← GET /api/chat/{sessionId}/messages
 │   │   │   ├── message/
-│   │   │   │   └── route.ts             ← POST /api/chat/message
-│   │   │   └── [sessionId]/
-│   │   │       └── messages/
-│   │   │           └── route.ts         ← GET /api/chat/[sessionId]/messages
-│   │   └── feedback/
-│   │       └── route.ts                 ← POST /api/feedback
-│   ├── layout.jsx                       ← Root layout: Nav, Auth provider, fonts
-│   ├── page.jsx                         ← Landing page (unauthenticated)
-│   └── globals.css                      ← Tailwind directives + CSS custom properties
+│   │   │   │   └── route.ts              ← POST /api/chat/message (runtime=nodejs, maxDuration=60)
+│   │   │   └── sessions/
+│   │   │       └── route.ts              ← POST /api/chat/sessions
+│   │   ├── contracts/
+│   │   │   ├── [id]/
+│   │   │   │   └── route.ts              ← GET /api/contracts/{id}
+│   │   │   ├── custom-terms/
+│   │   │   │   └── route.ts              ← POST /api/contracts/custom-terms
+│   │   │   ├── process/
+│   │   │   │   └── route.ts              ← POST /api/contracts/process (runtime=nodejs, maxDuration=60)
+│   │   │   └── upload/
+│   │   │       └── route.ts              ← POST /api/contracts/upload
+│   │   ├── feedback/
+│   │   │   └── route.ts                  ← POST /api/feedback
+│   │   └── key-terms/[id]/
+│   │       └── route.ts                  ← PATCH /api/key-terms/{id}
+│   ├── auth/
+│   │   ├── login/
+│   │   │   └── page.tsx                  ← LoginPage ('use client')
+│   │   └── signup/
+│   │       └── page.tsx                  ← SignupPage ('use client')
+│   ├── globals.css                       ← Tailwind directives + skeleton animation
+│   ├── layout.tsx                        ← Root layout: html, body, metadata
+│   └── page.tsx                          ← Landing page (marketing)
 │
 ├── components/
-│   ├── ui/                              ← Reusable design-system primitives
-│   │   ├── Button.jsx
-│   │   ├── Badge.jsx
-│   │   ├── Tooltip.jsx
-│   │   ├── Input.jsx
-│   │   ├── Textarea.jsx
-│   │   ├── Modal.jsx
-│   │   ├── Spinner.jsx
-│   │   ├── Banner.jsx
-│   │   └── Skeleton.jsx
-│   ├── contracts/                       ← Key terms display components
-│   │   ├── KeyTermsPanel.jsx
-│   │   ├── KeyTermCard.jsx
-│   │   ├── ConfidenceBar.jsx
-│   │   ├── SourceSentence.jsx           ← Expandable "Why?" section
-│   │   └── FeedbackWidget.jsx
-│   ├── upload/                          ← Upload flow components
-│   │   ├── ContractTypeSelector.jsx
-│   │   ├── DropZone.jsx
-│   │   ├── TermPreviewList.jsx          ← Pre-processing standard term preview
-│   │   ├── CustomTermInput.jsx
-│   │   └── ProcessingProgress.jsx       ← 3-step progress stepper
-│   ├── viewer/                          ← PDF and text viewers
-│   │   ├── PDFViewer.jsx               ← PDF.js wrapper; accepts targetPage prop
-│   │   └── TextViewerFallback.jsx       ← Parses [PAGE N] markers; accepts targetPage prop
-│   ├── chat/                            ← Chat interface components
-│   │   ├── ChatInterface.jsx
-│   │   └── MessageBubble.jsx
-│   ├── dashboard/                       ← Dashboard components
-│   │   ├── ContractTable.jsx
-│   │   ├── StatCard.jsx
-│   │   └── EmptyState.jsx
-│   └── layout/                         ← Navigation and layout
-│       └── Nav.jsx
+│   ├── chat/
+│   │   ├── ChatInterface.tsx             ← Full chat UI (session, messages, input, auto-scroll)
+│   │   └── MessageBubble.tsx             ← Individual message; parses [Page X] into clickable buttons
+│   ├── contracts/
+│   │   ├── ConfidenceBar.tsx             ← Colour-coded progress bar with role="meter" aria
+│   │   ├── FeedbackWidget.tsx            ← Thumbs up/down + optional comment
+│   │   ├── KeyTermCard.tsx               ← Expandable term card with inline edit
+│   │   ├── KeyTermsPanel.tsx             ← Scrollable panel; owns keyTerms array state
+│   │   ├── ResultsClient.tsx             ← 'use client'; owns targetPage, isChatOpen state
+│   │   └── SourceSentence.tsx            ← Collapsible "Why?" section
+│   ├── dashboard/
+│   │   ├── ContractTable.tsx             ← Client-side sortable table
+│   │   ├── EmptyState.tsx                ← Empty state with CTA
+│   │   └── StatCard.tsx                  ← Single stat display (number + label)
+│   ├── layout/
+│   │   └── Nav.tsx                       ← Sticky navigation bar
+│   ├── ui/                               ← Design-system primitives (Spec 09)
+│   │   ├── Badge.tsx
+│   │   ├── Banner.tsx
+│   │   ├── Button.tsx
+│   │   ├── Input.tsx
+│   │   ├── Modal.tsx
+│   │   ├── Skeleton.tsx
+│   │   ├── Spinner.tsx
+│   │   ├── Textarea.tsx
+│   │   └── Tooltip.tsx
+│   ├── upload/
+│   │   ├── ContractTypeSelector.tsx      ← NDA/MSA dropdown selector
+│   │   ├── CustomTermInput.tsx           ← Input + counter for custom terms
+│   │   ├── DropZone.tsx                  ← Drag-and-drop PDF zone
+│   │   ├── ProcessingProgress.tsx        ← 3-step progress stepper
+│   │   └── TermPreviewList.tsx           ← Standard + custom term preview list
+│   └── viewer/
+│       ├── PDFViewer.tsx                 ← PDF.js wrapper; accepts targetPage prop; lazy pages
+│       └── TextViewerFallback.tsx        ← [PAGE N] marker parser; same targetPage interface
 │
 ├── lib/
-│   ├── supabase/
-│   │   ├── client.ts                    ← Browser Supabase client (anon key)
-│   │   └── server.ts                    ← Server Supabase client (service role key)
-│   ├── pdf/
-│   │   └── extractor.ts                 ← pdf-parse wrapper
 │   ├── ai/
-│   │   ├── extraction.ts                ← Extraction orchestration + retry logic
-│   │   ├── chat.ts                      ← Chat orchestration + context building
-│   │   ├── classifier.ts                ← Query type classification
+│   │   ├── chat.ts                       ← buildChatMessages() + callChat()
+│   │   ├── classifier.ts                 ← classifyQuery(): 'contract' | 'history' | 'both'
+│   │   ├── extraction.ts                 ← runExtraction() with 3-attempt retry logic
 │   │   └── prompts/
-│   │       ├── nda-extraction.ts        ← NDA few-shot system prompt + term list
-│   │       ├── msa-extraction.ts        ← MSA few-shot system prompt + term list
-│   │       └── chat-system.ts           ← Chat system prompt
+│   │       ├── chat-system.ts            ← Chat system prompt with contractText injection
+│   │       ├── msa-extraction.ts         ← MSA few-shot system prompt (3 examples)
+│   │       └── nda-extraction.ts         ← NDA few-shot system prompt (3 examples)
+│   ├── pdf/
+│   │   └── extractor.ts                  ← extractPDFText(): per-page render, [PAGE N], validation
+│   ├── security/
+│   │   ├── authGuard.ts                  ← requireAuth(): getUser() → AuthResult (user | 401)
+│   │   ├── promptInjectionGuard.ts       ← sanitizeForLLM(): strips injection patterns
+│   │   └── rateLimiter.ts                ← checkRateLimit(): sliding window via admin client
+│   ├── supabase/
+│   │   ├── client.ts                     ← createBrowserClient() — anon key, Client Components
+│   │   └── server.ts                     ← createRouteClient(), createPageClient(), createAdminClient()
 │   ├── validation/
-│   │   ├── upload.schema.ts
-│   │   ├── process.schema.ts
-│   │   ├── key-term.schema.ts
-│   │   ├── chat.schema.ts
-│   │   └── feedback.schema.ts
-│   └── constants.ts                     ← All numeric/string constants
-│
-├── middleware.ts                         ← Supabase session check; protect /dashboard, /upload, /contracts/*
+│   │   ├── chat.schema.ts                ← chatMessageSchema
+│   │   ├── feedback.schema.ts            ← feedbackSchema
+│   │   ├── key-term.schema.ts            ← keyTermPatchSchema
+│   │   ├── process.schema.ts             ← processSchema
+│   │   └── upload.schema.ts              ← uploadBodySchema + validateFile()
+│   └── constants.ts                      ← All numeric/config constants
 │
 ├── public/
-│   └── fonts/                           ← Inter + JetBrains Mono font files (or Google Fonts import)
+│   └── pdf.worker.min.mjs                ← PDF.js worker (copied from pdfjs-dist/build/)
 │
-├── .env.example                         ← All required env vars
-├── .env.local                           ← Local values (gitignored)
-├── next.config.mjs
+├── docs/
+│   ├── ContractIQ_PRD.md
+│   ├── design.md
+│   ├── engineering/
+│   │   └── engineering-doc.md            ← This document
+│   └── specs/
+│       ├── 01-auth.md
+│       ├── 02-pdf-upload-extraction.md
+│       ├── 03-ai-key-term-extraction.md
+│       ├── 04-results-page.md
+│       ├── 05-contract-chat.md
+│       ├── 06-dashboard.md
+│       ├── 07-inline-editing-feedback.md
+│       ├── 08-rate-limiting.md
+│       ├── 09-shared-ui-components.md
+│       └── supabase-schema.sql
+│
+├── .env.example                          ← All required env vars documented
+├── .env.local                            ← Local values (gitignored)
+├── middleware.ts                         ← Route protection + auth redirect
+├── next.config.mjs                       ← serverComponentsExternalPackages: ['pdf-parse']
+├── netlify.toml                          ← Netlify deployment config
 ├── tailwind.config.js
 ├── tsconfig.json
 └── package.json
@@ -1390,41 +1723,73 @@ contractiq/
 
 | Category | Convention | Example |
 |---|---|---|
-| Page files | `page.jsx` | `app/(protected)/dashboard/page.jsx` |
-| API routes | `route.ts` | `app/api/contracts/upload/route.ts` |
-| Components | PascalCase `.jsx` | `KeyTermsPanel.jsx`, `PDFViewer.jsx` |
+| Page files | `page.tsx` (lowercase) | `app/(protected)/dashboard/page.tsx` |
+| API routes | `route.ts` (lowercase) | `app/api/contracts/upload/route.ts` |
+| React components | PascalCase `.tsx` | `KeyTermsPanel.tsx`, `PDFViewer.tsx` |
+| Custom hook files | `use` + PascalCase `.ts` | `useContractData.ts`, `usePDFViewer.ts` |
 | Lib modules | kebab-case `.ts` | `extractor.ts`, `chat-system.ts` |
-| Schema files | kebab-case + `.schema.ts` suffix | `upload.schema.ts` |
-| Prompt files | kebab-case `.ts` | `nda-extraction.ts` |
-| Route folders | kebab-case | `key-terms/`, `chat-system/` |
+| Schema files | kebab-case + `.schema.ts` | `upload.schema.ts`, `chat.schema.ts` |
+| Prompt files | kebab-case `.ts` | `nda-extraction.ts`, `msa-extraction.ts` |
+| Route group folders | parentheses + kebab-case | `(protected)/` |
+| API route folders | kebab-case | `key-terms/`, `custom-terms/` |
+| Dynamic segments | camelCase in brackets | `[id]`, `[sessionId]` |
 
-### Components
+### React Components
 
-- **React components:** PascalCase (`KeyTermCard`, `ConfidenceBar`, `TextViewerFallback`)
-- **Custom hooks:** `use` prefix + PascalCase (`useContractData`, `usePDFViewer`, `useChatSession`)
-- **Context providers:** PascalCase + `Provider` suffix (`AuthProvider`, `ContractProvider`)
+- PascalCase, descriptive: `KeyTermCard`, `ConfidenceBar`, `TextViewerFallback`, `ProcessingProgress`
+- Custom hooks: `use` prefix + PascalCase (`useContractData`, `usePDFViewer`, `useChatSession`)
+- Context providers: PascalCase + `Provider` suffix (`AuthProvider`, `ContractProvider`)
 
 ### API Routes
 
-- **REST nouns, plural, kebab-case:** `/api/key-terms/[id]`, `/api/chat/sessions`, `/api/user-feedback`
-- **Path parameters:** camelCase in brackets: `[id]`, `[sessionId]`
+- REST nouns, plural, kebab-case path segments: `/api/key-terms/[id]`, `/api/chat/sessions`
+- HTTP method determines action: `GET` = read, `POST` = create, `PATCH` = partial update, `DELETE` = delete
+- No verbs in paths (exception: `/api/contracts/process` — noun-adjacent process step)
+- Nested resources: `/api/chat/[sessionId]/messages`
 
 ### Database
 
-- **Tables:** snake_case, plural (`contracts`, `key_terms`, `chat_messages`, `rate_limit_events`)
-- **Columns:** snake_case (`contract_id`, `confidence_score`, `is_edited`, `ai_value`)
-- **Indexes:** `idx_{table}_{columns}` (`idx_contracts_user_id`, `idx_chat_messages_session_id_created_at`)
-- **RLS policies:** descriptive string (`"Users can view own contracts"`, `"Users can insert own key_terms"`)
+| Element | Convention | Example |
+|---|---|---|
+| Tables | `snake_case`, plural | `contracts`, `key_terms`, `chat_messages` |
+| Columns | `snake_case` | `contract_id`, `confidence_score`, `is_edited` |
+| Indexes | `idx_{table}_{column(s)}` | `idx_contracts_user_id` |
+| RLS policy names | `"Users can {operation} own {table}"` | `"Users can view own contracts"` |
+| FK columns | `{referenced_table_singular}_id` | `contract_id`, `session_id` |
+| Boolean columns | `is_` prefix | `is_manual`, `is_edited` |
+| Timestamp columns | `_at` suffix | `created_at`, `last_accessed_at` |
+| Status enums | lowercase strings | `'pending'`, `'processing'`, `'completed'`, `'error'` |
 
 ### Environment Variables
 
-- **Server-only:** `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- **Client-safe (NEXT_PUBLIC_):** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- **Feature config:** `NEXT_PUBLIC_MAX_FILE_SIZE_MB`, `NEXT_PUBLIC_MAX_PAGES`
+- Server-only (never `NEXT_PUBLIC_` prefix): `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- Client-safe: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- All vars documented in `.env.example` with descriptions and example values
 
 ### Constants (`lib/constants.ts`)
 
-- SCREAMING_SNAKE_CASE: `MAX_FILE_SIZE_MB`, `MAX_PAGES`, `MAX_CUSTOM_TERMS`, `CONFIDENCE_THRESHOLD_LOW`, `CONFIDENCE_THRESHOLD_HIGH`, `OPENAI_EXTRACTION_TEMP`, `SIGNED_URL_EXPIRY_SECONDS`, `MAX_CHAT_HISTORY`
+All exported constants use SCREAMING_SNAKE_CASE:
+
+```typescript
+MAX_FILE_SIZE_MB = 10
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+MAX_PAGES = 20
+MAX_TOKEN_COUNT = 15_000
+MIN_WORD_COUNT = 100
+MAX_CUSTOM_TERMS = 5
+CONFIDENCE_THRESHOLD_LOW = 50
+CONFIDENCE_THRESHOLD_HIGH = 80
+OPENAI_EXTRACTION_TEMP = 0.1
+OPENAI_CHAT_TEMP = 0.4
+OPENAI_EXTRACTION_MAX_TOKENS = 2000
+OPENAI_CHAT_MAX_TOKENS = 1000
+SIGNED_URL_EXPIRY_SECONDS = 3600
+MAX_CHAT_HISTORY = 200
+RATE_LIMIT_PROCESS_PER_HOUR = 20
+RATE_LIMIT_CHAT_PER_HOUR = 60
+CONTRACT_TYPE_NDA = 'nda'
+CONTRACT_TYPE_MSA = 'msa'
+```
 
 ---
 
@@ -1432,94 +1797,118 @@ contractiq/
 
 ### Unit Tests
 
-**Framework:** Vitest  
-**Coverage target:** ≥ 80% on `lib/` modules
+**Framework:** Vitest
+
+**Coverage target:** ≥ 80% line coverage on `lib/` modules
 
 **Key test targets:**
-| Module | What to test |
-|---|---|
-| `lib/pdf/extractor.ts` | `[PAGE N]` marker insertion, word count detection (scanned PDF rejection), token count calculation, error on unreadable PDF |
-| `lib/ai/extraction.ts` | Valid JSON parsing, corrective retry on parse failure, schema validation (Zod), custom term injection into prompt |
-| `lib/ai/classifier.ts` | All three query types classified correctly for representative inputs |
-| `lib/ai/chat.ts` | Context building with 200-message cap, contract_text truncation at token limit |
-| `lib/validation/*.schema.ts` | Valid and invalid inputs for each Zod schema |
-| `lib/constants.ts` | Values match PRD requirements (spot check) |
 
----
+| Module | What to test | Representative assertions |
+|---|---|---|
+| `lib/pdf/extractor.ts` | `[PAGE N]` marker insertion; word count detection; token count calculation; error on corrupt PDF; page count enforcement | Buffer with 3 pages → text contains `[PAGE 1]`, `[PAGE 2]`, `[PAGE 3]`; 21-page PDF → throws TOO_MANY_PAGES |
+| `lib/ai/extraction.ts` | Valid JSON parsing; corrective retry on parse failure (mock OpenAI); Zod schema validation; custom term injection; "Not found" term handling | Mock returns invalid JSON → second call made with corrective prompt; `confidence_score` out of 0–100 range → Zod throws |
+| `lib/ai/chat.ts` | Message array construction; history capped at 200; contract_text in system prompt | `buildChatMessages` with 205-message history → messages array has ≤ 202 items (system + 200 history + 1 new) |
+| `lib/ai/classifier.ts` | All three query types for representative inputs | "What did you say earlier?" → `'history'`; "What is the governing law?" → `'contract'`; "What did you say about the governing law?" → `'both'` |
+| `lib/validation/*.schema.ts` | Valid and invalid inputs for each Zod schema | `uploadBodySchema`: `{ contract_type: 'invalid' }` → fails; `{ contract_type: 'nda' }` → passes |
+| `lib/security/rateLimiter.ts` | Count at limit → `allowed: false`; count below limit → `allowed: true`, `remaining` decremented | Mock Supabase count = 20 for `'contracts/process'` → `{ allowed: false, remaining: 0 }` |
+| `lib/security/promptInjectionGuard.ts` | All injection patterns stripped; empty result after stripping → `safe: false` | Input `"###ignore previous"` → `safe: false` or stripped output empty |
+| `lib/constants.ts` | Values match PRD requirements | `MAX_FILE_SIZE_BYTES === 10 * 1024 * 1024`; `CONFIDENCE_THRESHOLD_LOW === 50` |
 
 ### Integration Tests
 
-**Framework:** Vitest + Supabase local development stack  
-**Coverage target:** ≥ 70% on API routes
+**Framework:** Vitest + Supabase local development stack (`supabase start`)
+
+**Coverage target:** ≥ 70% line coverage on API routes
 
 **Key test targets:**
-| Endpoint | What to test |
-|---|---|
-| `POST /api/contracts/upload` | Valid PDF → contract row created; scanned PDF → 400; oversized → 400; unauthenticated → 401 |
-| `POST /api/contracts/process` | Standard terms extracted; custom terms included; status updated to 'completed'; OpenAI timeout → 504 + status 'error' |
-| `PATCH /api/key-terms/[id]` | Value updated; `ai_value` preserved; wrong user → 403 |
-| `POST /api/chat/message` | Correct OpenAI messages built; user + assistant messages stored in DB |
-| **RLS cross-user test** | User A cannot read User B's contracts, key_terms, or chat_messages (critical) |
 
----
+| Endpoint | Test Case | Expected Outcome |
+|---|---|---|
+| POST `/api/contracts/upload` | Valid 5-page text-layer PDF + `'nda'` | 201; contracts row with `status = 'pending'`; `contract_text` contains `[PAGE 1]` |
+| POST `/api/contracts/upload` | Scanned PDF (< 100 words extracted) | 400 SCANNED_PDF; no DB insert |
+| POST `/api/contracts/upload` | File > 10 MB | 400 FILE_TOO_LARGE; no DB insert |
+| POST `/api/contracts/upload` | No auth token | 401 UNAUTHORIZED |
+| POST `/api/contracts/process` | Standard terms + 2 custom terms | 200; `is_manual = true` for custom terms; `contracts.status = 'completed'` |
+| POST `/api/contracts/process` | OpenAI mock throws timeout | 504 AI_TIMEOUT; `contracts.status = 'error'` |
+| POST `/api/contracts/process` | 21st request from same user in 1 hour | 429 RATE_LIMIT_EXCEEDED |
+| PATCH `/api/key-terms/[id]` | Correct user; new value | 200; `ai_value` = previous value; `is_edited = true` |
+| PATCH `/api/key-terms/[id]` | Different user tries to edit | 403 FORBIDDEN |
+| POST `/api/chat/message` | Valid message | 200; user + assistant messages in `chat_messages` |
+| POST `/api/feedback` | Second submission for same contract | 409 ALREADY_SUBMITTED |
+| **RLS isolation** | User A's JWT queries User B's `contracts` table | Empty result (RLS policy blocks cross-user reads) |
+| **RLS isolation** | User B accesses User A's `key_terms` directly | Empty result |
 
 ### End-to-End Tests
 
-**Framework:** Playwright  
-**Coverage:** Golden paths + critical edge cases
+**Framework:** Playwright
 
-**Test suite:**
-| Test | Flow |
-|---|---|
-| Full review flow | Sign up → Upload NDA → Process → View key terms with confidence scores → Click page number → PDF scrolls |
-| Chat groundedness | Open chat → Ask question present in document → Assert `[Page X]` in response |
-| Hallucination regression | Open chat → Ask question about topic NOT in document → Assert "I cannot find this in the document" |
-| Inline edit | Edit a key term → Assert "Edited" badge shown → Refresh page → Assert edited value persists |
-| Cross-user isolation | Log in as User B → Try to access User A's contract URL → Assert 403 or redirect |
-| Scanned PDF rejection | Upload image-only PDF → Assert error message shown |
+**Test environment:** Netlify preview deploy or local `next dev` with Supabase local
 
----
+| Test ID | Name | Flow | Assertion |
+|---|---|---|---|
+| E2E-001 | Full NDA review flow | Sign up → upload 8-page NDA → process → view results | Key terms panel shows ≥ 8 terms with confidence scores and page numbers |
+| E2E-002 | PDF viewer page navigation | Open results → click page number on key term | PDF viewer scrolls to correct page |
+| E2E-003 | Text viewer fallback | Open results for contract with null `file_path` | Text viewer renders; page navigation still works |
+| E2E-004 | Chat groundedness — answer present | Open chat → ask "What is the governing law?" (present in contract) | Response contains "Based on the document," and `[Page X]` citation |
+| E2E-005 | Chat hallucination regression | Open chat → ask about topic not in document | Response contains "I cannot find this in the document." |
+| E2E-006 | Inline term editing | Click a term value → edit → Enter | "Edited" badge shown; refresh → edited value persists |
+| E2E-007 | Chat persistence | Close chat → reopen contract | Previous conversation loads in full |
+| E2E-008 | Cross-user isolation | Log in as User B → navigate to `/contracts/{User A's contract ID}` | 404 or redirect; User B's data not visible |
+| E2E-009 | Scanned PDF rejection | Upload image-only PDF | Banner shows "Scanned PDFs are not supported yet." |
+| E2E-010 | Custom term in results | Add "Non-compete radius" → process | Term appears in results with "Custom" badge and same data structure |
+| E2E-011 | Dashboard sort | Dashboard → click "Date Uploaded" header | List reverses sort order; oldest contract appears first |
+| E2E-012 | Feedback submission | Submit thumbs up + comment → revisit results page | Widget shows "Thanks for your feedback!"; no buttons shown on revisit |
 
 ### Offline AI Evaluation
 
+*(Separate from automated test suite — run manually before each release)*
+
 **Dataset:**
-- 30 manually labelled NDA contracts (annotated by legal SME or CUAD)
+- 30 manually labelled NDA contracts (annotated by legal SME or from CUAD dataset)
 - 20 manually labelled MSA contracts
 
-**Metrics:**
+**Metrics and targets:**
+
 | Metric | Target | Cadence |
 |---|---|---|
 | Key-term extraction F1 (NDA) | ≥ 88% | Every release |
 | Key-term extraction F1 (MSA) | ≥ 85% | Every release |
-| Page number accuracy | ≥ 92% | Every release |
+| Page number accuracy (% correct) | ≥ 92% | Every release |
 | Custom term extraction F1 | ≥ 80% | Every release |
 | Chat groundedness (% hallucinated) | ≤ 5% | Monthly |
-| Confidence score calibration error | ≤ 0.10 | Monthly |
+| Confidence calibration error | ≤ 0.10 | Monthly |
 
-**Evaluation spreadsheet columns:** `Contract_ID | Contract_Type | Term_Name | Expected_Value | AI_Extracted_Value | Expected_Page | AI_Page | Confidence_Score | F1_Match | Expert_Rating | Notes`
+**Evaluation spreadsheet columns:**
+`Contract_ID | Contract_Type | Term_Name | Expected_Value | AI_Extracted_Value | Expected_Page | AI_Page | Confidence_Score | F1_Match | Expert_Rating | Notes`
 
----
-
-## 14. Specs-to-Implementation Mapping
-
-| User Story / Spec | Implementation Files | Full Flow |
-|---|---|---|
-| **US-001 — Auth** | `app/(auth)/login/page.jsx`, `app/(auth)/signup/page.jsx`, `middleware.ts`, `lib/supabase/client.ts`, `components/layout/Nav.jsx` | User submits form → `supabase.auth.signInWithPassword()` → session set → middleware reads session → redirect to dashboard |
-| **US-002 — PDF Upload + Extraction** | `app/(protected)/upload/page.jsx`, `components/upload/DropZone.jsx`, `app/api/contracts/upload/route.ts`, `lib/pdf/extractor.ts`, `lib/validation/upload.schema.ts` | User drops PDF → client validates → `POST /api/contracts/upload` → `extractor.ts` parses text → `INSERT INTO contracts` → Storage upload (non-blocking) |
-| **US-003 — Page Attribution** | `lib/ai/extraction.ts`, `lib/ai/prompts/nda-extraction.ts`, `lib/ai/prompts/msa-extraction.ts`, `components/contracts/KeyTermCard.jsx`, `components/viewer/PDFViewer.jsx` | OpenAI returns `page_number` per term → stored in `key_terms.page_number` → `KeyTermCard` renders page link → click triggers `setTargetPage` → `PDFViewer` scrolls |
-| **US-004 — Confidence Scores** | `components/contracts/ConfidenceBar.jsx`, `components/contracts/KeyTermCard.jsx`, `components/ui/Tooltip.jsx`, `lib/constants.ts` | OpenAI returns `confidence_score` → `ConfidenceBar` colour-codes → `KeyTermCard` shows ⚠️ if < 50 with `Tooltip` |
-| **US-005 — Custom Terms** | `components/upload/CustomTermInput.jsx`, `components/upload/TermPreviewList.jsx`, `app/api/contracts/process/route.ts`, `lib/validation/process.schema.ts` | User types custom term → `INSERT INTO custom_key_terms` → preview list updates with "Custom" badge → `POST /api/contracts/process` sends custom_terms → prompt builder appends to standard terms |
-| **US-006 — PDF Viewer** | `components/viewer/PDFViewer.jsx`, `components/viewer/TextViewerFallback.jsx`, `app/api/contracts/[id]/route.ts` | Results page calls `GET /api/contracts/[id]` → receives `signed_url` → `PDFViewer` renders from URL; if null → `TextViewerFallback` parses `contract_text` by `[PAGE N]` markers |
-| **US-007 — Chat** | `components/chat/ChatInterface.jsx`, `components/chat/MessageBubble.jsx`, `app/api/chat/message/route.ts`, `lib/ai/chat.ts`, `lib/ai/classifier.ts`, `lib/ai/prompts/chat-system.ts` | User types → `POST /api/chat/message` → `classifier.ts` types query → `chat.ts` builds messages array (system + contract_text + history) → OpenAI call → INSERT messages → response rendered in `MessageBubble` with page citation link |
-| **US-008 — Dashboard** | `app/(protected)/dashboard/page.jsx`, `components/dashboard/ContractTable.jsx`, `components/dashboard/StatCard.jsx`, `components/dashboard/EmptyState.jsx` | Page loads → `SELECT contracts WHERE user_id = auth.uid()` → `StatCard` renders counts → `ContractTable` renders sortable list → click row → navigate to `/contracts/[id]` |
-| **US-009 — Inline Edit** | `components/contracts/KeyTermCard.jsx`, `app/api/key-terms/[id]/route.ts`, `lib/validation/key-term.schema.ts` | User clicks term → input renders → submit → `PATCH /api/key-terms/[id]` → server preserves `ai_value` → updates `value` + `is_edited=true` → `KeyTermCard` shows "Edited" badge |
-| **US-010 — Feedback** | `components/contracts/FeedbackWidget.jsx`, `app/api/feedback/route.ts`, `lib/validation/feedback.schema.ts` | User clicks thumbs up/down → optional comment → `POST /api/feedback` → `INSERT INTO user_feedback` |
-| **US-012 — Persistent Chat** | `app/api/chat/[sessionId]/messages/route.ts`, `components/chat/ChatInterface.jsx` | Results page mounts → `GET /api/chat/[sessionId]/messages` → `ChatInterface` rehydrates message history from DB |
-| **FR-03 — Text stored once** | `app/api/contracts/upload/route.ts`, `lib/pdf/extractor.ts` | Text extracted at upload, stored in `contracts.contract_text`; extraction route reads from DB, not Storage; chat route reads from DB, not Storage |
-| **FR-06 — Viewer fallback** | `components/viewer/TextViewerFallback.jsx`, `app/(protected)/contracts/[id]/page.jsx` | `signed_url` null or Storage error → `TextViewerFallback` renders; same `targetPage` prop API as `PDFViewer` |
-| **FR-13 — RLS** | `supabase/rls-policies.sql` (created in Stage 2) | Every table has RLS enabled; policies enforce `auth.uid() = user_id` on all operations |
-| **FR-14 — Single SQL file** | `docs/specs/supabase-schema.sql` (created in Stage 2) | Contains all `CREATE TABLE`, `CREATE INDEX`, `CREATE POLICY`, `INSERT INTO storage.buckets`, `CREATE POLICY ON storage.objects` statements |
+**Production monitoring:**
+- Weekly drift check: sample 10 recent user-corrected terms → compare against expected extraction
+- Alert: correction rate > 12% in any 7-day rolling window → trigger immediate prompt review
+- Monthly: legal SME audits 5 random production contracts for quality assurance
 
 ---
 
-*Both engineering documents are ready in `docs/engineering/`. Review this document and let me know when you're happy to move to Stage 2 — Implementation Specs.*
+## 14. Specs to Implementation Mapping
+
+| Spec | User Story | Key Implementation Files | Full Flow |
+|---|---|---|---|
+| `01-auth.md` | US-001 | `app/auth/login/page.tsx`, `app/auth/signup/page.tsx`, `middleware.ts`, `lib/supabase/client.ts`, `components/layout/Nav.tsx` | User submits form → `supabase.auth.signInWithPassword()` or `signUp()` → session cookie stored → `middleware.ts` reads session on every protected route → redirect logic applied |
+| `02-pdf-upload-extraction.md` | US-002, US-005 | `app/(protected)/upload/page.tsx`, `components/upload/DropZone.tsx`, `components/upload/ContractTypeSelector.tsx`, `app/api/contracts/upload/route.ts`, `lib/pdf/extractor.ts`, `lib/validation/upload.schema.ts`, `components/upload/CustomTermInput.tsx`, `app/api/contracts/custom-terms/route.ts` | User drops PDF → client validates → `POST /api/contracts/upload` → `extractPDFText()` parses pages + builds `[PAGE N]` text → `INSERT INTO contracts` → non-blocking Storage upload; Custom term → `POST /api/contracts/custom-terms` → `INSERT INTO custom_key_terms` → preview list updates |
+| `03-ai-key-term-extraction.md` | US-003, US-004, US-005 | `app/api/contracts/process/route.ts`, `lib/ai/extraction.ts`, `lib/ai/prompts/nda-extraction.ts`, `lib/ai/prompts/msa-extraction.ts`, `lib/validation/process.schema.ts`, `lib/security/rateLimiter.ts` | `POST /api/contracts/process` → rate limit check → fetch `contract_text` from DB → `runExtraction()` → few-shot prompt built → OpenAI call with retry → Zod validate → `INSERT INTO key_terms` → `UPDATE status = 'completed'` |
+| `04-results-page.md` | US-003, US-004, US-006 | `app/(protected)/contracts/[id]/page.tsx`, `components/contracts/ResultsClient.tsx`, `components/viewer/PDFViewer.tsx`, `components/viewer/TextViewerFallback.tsx`, `components/contracts/KeyTermsPanel.tsx`, `components/contracts/KeyTermCard.tsx`, `components/contracts/ConfidenceBar.tsx`, `components/contracts/SourceSentence.tsx`, `app/api/contracts/[id]/route.ts` | Server Component fetches contract + keyTerms + signedUrl + chatSession + feedback → passes to `ResultsClient` → `PDFViewer` renders from signed_url (or `TextViewerFallback` if null) → `KeyTermCard` renders per term with confidence + page link + "Why?" → clicking page number calls `setTargetPage()` → both viewers scroll |
+| `05-contract-chat.md` | US-007, US-012 | `components/chat/ChatInterface.tsx`, `components/chat/MessageBubble.tsx`, `app/api/chat/sessions/route.ts`, `app/api/chat/message/route.ts`, `app/api/chat/[sessionId]/messages/route.ts`, `lib/ai/chat.ts`, `lib/ai/classifier.ts`, `lib/ai/prompts/chat-system.ts`, `lib/validation/chat.schema.ts`, `lib/security/promptInjectionGuard.ts` | User types → `POST /api/chat/message` → `sanitizeForLLM()` → rate limit check → fetch `contract_text` + verify session → fetch history (200 messages ASC) → `classifyQuery()` → `buildChatMessages()` (system + contractText + history + new) → `callChat()` → INSERT both messages → return response → `MessageBubble` renders with `[Page X]` as clickable button |
+| `06-dashboard.md` | US-008 | `app/(protected)/dashboard/page.tsx`, `components/dashboard/ContractTable.tsx`, `components/dashboard/StatCard.tsx`, `components/dashboard/EmptyState.tsx` | Server Component: `SELECT contracts WHERE user_id = auth.uid() ORDER BY created_at DESC` → derive stats → `StatCard × 3` → `ContractTable` (client-side sort) → clicking row → `router.push('/contracts/{id}')` |
+| `07-inline-editing-feedback.md` | US-009, US-010 | `components/contracts/KeyTermCard.tsx`, `app/api/key-terms/[id]/route.ts`, `lib/validation/key-term.schema.ts`, `components/contracts/FeedbackWidget.tsx`, `app/api/feedback/route.ts`, `lib/validation/feedback.schema.ts` | Term click → inline input → Enter → `PATCH /api/key-terms/{id}` → preserve `ai_value` on first edit → `is_edited = true` → "Edited" badge; Thumbs click → textarea → Submit → `POST /api/feedback` → 409 if duplicate → "Thanks for your feedback!" |
+| `08-rate-limiting.md` | (non-functional) | `lib/security/rateLimiter.ts`, `rate_limit_events` table, `app/api/contracts/process/route.ts`, `app/api/chat/message/route.ts` | `checkRateLimit(userId, endpoint)` → sliding window COUNT in `rate_limit_events` WHERE `created_at >= now() - 1hr` → if count ≥ limit: return `{ allowed: false }` → route returns 429 with Retry-After header; else: INSERT new event → return `{ allowed: true, remaining: N }` |
+| `09-shared-ui-components.md` | (non-functional) | `components/ui/Button.tsx`, `Badge.tsx`, `Tooltip.tsx`, `Input.tsx`, `Textarea.tsx`, `Modal.tsx`, `Spinner.tsx`, `Banner.tsx`, `Skeleton.tsx` | Used by all feature components; design-system tokens from `docs/design.md`; all keyboard navigable; no hardcoded hex values |
+| `supabase-schema.sql` | FR-13, FR-14 | `docs/specs/supabase-schema.sql` | Single paste-and-run SQL file: CREATE TABLE × 7 + indexes + RLS policies + storage bucket INSERT + storage.objects policies × 3 |
+
+### Critical Files
+
+| File | Why it matters |
+|---|---|
+| `docs/specs/supabase-schema.sql` | Must be executed first on any new Supabase project; creates the entire database foundation including Storage RLS |
+| `lib/ai/extraction.ts` | Core AI extraction orchestration with retry logic; the heart of the product's accuracy guarantee |
+| `app/api/contracts/upload/route.ts` | Upload pipeline entry point; determines what text the entire downstream AI system sees |
+| `components/contracts/ResultsClient.tsx` | Client-side root of the results page; owns the `targetPage` state that connects key terms panel to both viewers |
+| `lib/security/rateLimiter.ts` | Prevents runaway OpenAI costs; uses admin client to bypass RLS for tamper-proof rate limit enforcement |

@@ -40,14 +40,15 @@
 
 | File | Purpose |
 |---|---|
-| `app/(protected)/contracts/[id]/page.jsx` | Results page (server component fetches data) |
-| `components/viewer/PDFViewer.jsx` | PDF.js-based viewer |
-| `components/viewer/TextViewerFallback.jsx` | Text-based fallback using [PAGE N] markers |
-| `components/contracts/KeyTermsPanel.jsx` | Right panel: list of KeyTermCard |
-| `components/contracts/KeyTermCard.jsx` | Individual term card with edit, confidence, why |
-| `components/contracts/ConfidenceBar.jsx` | Colour-coded confidence indicator |
-| `components/contracts/SourceSentence.jsx` | Expandable "Why?" section |
-| `components/contracts/FeedbackWidget.jsx` | Thumbs up/down (see Spec 07) |
+| `app/(protected)/contracts/[id]/page.tsx` | Results page (Server Component fetches data) |
+| `components/contracts/ResultsClient.tsx` | Client Component; owns targetPage + isChatOpen state |
+| `components/viewer/PDFViewer.tsx` | PDF.js-based viewer (accepts targetPage prop) |
+| `components/viewer/TextViewerFallback.tsx` | Text-based fallback using [PAGE N] markers (same interface) |
+| `components/contracts/KeyTermsPanel.tsx` | Right panel: list of KeyTermCard |
+| `components/contracts/KeyTermCard.tsx` | Individual term card with edit, confidence, why |
+| `components/contracts/ConfidenceBar.tsx` | Colour-coded confidence indicator |
+| `components/contracts/SourceSentence.tsx` | Expandable "Why?" section |
+| `components/contracts/FeedbackWidget.tsx` | Thumbs up/down (see Spec 07) |
 | `app/api/contracts/[id]/route.ts` | GET /api/contracts/[id] |
 
 ---

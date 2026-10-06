@@ -36,8 +36,8 @@ Returning visit:
 
 | File | Purpose |
 |---|---|
-| `components/chat/ChatInterface.jsx` | Full chat UI: history + input |
-| `components/chat/MessageBubble.jsx` | Individual message (user or assistant) |
+| `components/chat/ChatInterface.tsx` | Full chat UI: history + input |
+| `components/chat/MessageBubble.tsx` | Individual message (user or assistant) |
 | `app/api/chat/sessions/route.ts` | POST /api/chat/sessions |
 | `app/api/chat/message/route.ts` | POST /api/chat/message |
 | `app/api/chat/[sessionId]/messages/route.ts` | GET messages |

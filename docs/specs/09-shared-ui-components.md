@@ -12,7 +12,7 @@ All components must:
 
 ---
 
-## Button (`components/ui/Button.jsx`)
+## Button (`components/ui/Button.tsx`)
 
 ```jsx
 Props:
@@ -52,7 +52,7 @@ Usage:
 
 ---
 
-## Badge (`components/ui/Badge.jsx`)
+## Badge (`components/ui/Badge.tsx`)
 
 ```jsx
 Props:
@@ -88,7 +88,7 @@ Usage:
 
 ---
 
-## Tooltip (`components/ui/Tooltip.jsx`)
+## Tooltip (`components/ui/Tooltip.tsx`)
 
 ```jsx
 'use client'
@@ -135,7 +135,7 @@ Usage:
 
 ---
 
-## Input (`components/ui/Input.jsx`)
+## Input (`components/ui/Input.tsx`)
 
 ```jsx
 Props:
@@ -170,7 +170,7 @@ Usage:
 
 ---
 
-## Textarea (`components/ui/Textarea.jsx`)
+## Textarea (`components/ui/Textarea.tsx`)
 
 ```jsx
 Props: same as Input plus:
@@ -183,7 +183,7 @@ resize: CSS resize property.
 
 ---
 
-## Modal (`components/ui/Modal.jsx`)
+## Modal (`components/ui/Modal.tsx`)
 
 ```jsx
 'use client'
@@ -225,7 +225,7 @@ Usage:
 
 ---
 
-## Spinner (`components/ui/Spinner.jsx`)
+## Spinner (`components/ui/Spinner.tsx`)
 
 ```jsx
 Props:
@@ -251,7 +251,7 @@ Usage:
 
 ---
 
-## Banner (`components/ui/Banner.jsx`)
+## Banner (`components/ui/Banner.tsx`)
 
 ```jsx
 Props:
@@ -288,7 +288,7 @@ Usage:
 
 ---
 
-## Skeleton (`components/ui/Skeleton.jsx`)
+## Skeleton (`components/ui/Skeleton.tsx`)
 
 ```jsx
 Props:

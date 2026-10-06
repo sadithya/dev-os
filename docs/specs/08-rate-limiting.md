@@ -26,7 +26,7 @@
 ## `lib/security/rateLimiter.ts`
 
 ```typescript
-import { SupabaseClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { RATE_LIMIT_PROCESS_PER_HOUR, RATE_LIMIT_CHAT_PER_HOUR } from '@/lib/constants'
 
 export const RATE_LIMITS: Record<string, number> = {
@@ -40,11 +40,14 @@ export interface RateLimitResult {
   resetAt: Date
 }
 
+// Uses createAdminClient() (service role key) to bypass RLS on rate_limit_events.
+// RLS cannot protect rate limiting — a user with the anon key could delete their own
+// events and bypass the limit. The admin client makes the table tamper-proof.
 export async function checkRateLimit(
-  supabase: SupabaseClient,
   userId: string,
   endpoint: string,
 ): Promise<RateLimitResult> {
+  const adminClient = createAdminClient()
   const limitPerHour = RATE_LIMITS[endpoint]
   if (!limitPerHour) throw new Error(`Unknown rate-limit endpoint: ${endpoint}`)
 
@@ -53,7 +56,7 @@ export async function checkRateLimit(
 
   // Prune stale events older than 2 hours (best-effort cleanup)
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-  supabase
+  adminClient
     .from('rate_limit_events')
     .delete()
     .eq('user_id', userId)
@@ -62,7 +65,7 @@ export async function checkRateLimit(
     .then(() => {})  // fire and forget
 
   // Count events in the last hour
-  const { count } = await supabase
+  const { count } = await adminClient
     .from('rate_limit_events')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
@@ -76,7 +79,7 @@ export async function checkRateLimit(
   }
 
   // Record this event
-  await supabase
+  await adminClient
     .from('rate_limit_events')
     .insert({ user_id: userId, endpoint })
 
@@ -96,7 +99,7 @@ export async function checkRateLimit(
 // In POST /api/contracts/process/route.ts
 import { checkRateLimit } from '@/lib/security/rateLimiter'
 
-const { allowed, remaining } = await checkRateLimit(supabase, session.user.id, 'contracts/process')
+const { allowed, remaining } = await checkRateLimit(session.user.id, 'contracts/process')
 
 if (!allowed) {
   return Response.json(

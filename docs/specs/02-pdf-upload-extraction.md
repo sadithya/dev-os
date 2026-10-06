@@ -54,12 +54,12 @@
 
 | File | Purpose |
 |---|---|
-| `app/(protected)/upload/page.jsx` | Upload page (client component) |
-| `components/upload/ContractTypeSelector.jsx` | NDA/MSA dropdown |
-| `components/upload/DropZone.jsx` | Drag/drop + file picker |
-| `components/upload/TermPreviewList.jsx` | Standard + custom term preview |
-| `components/upload/CustomTermInput.jsx` | Add custom term input |
-| `components/upload/ProcessingProgress.jsx` | 3-step processing stepper |
+| `app/(protected)/upload/page.tsx` | Upload page (client component) |
+| `components/upload/ContractTypeSelector.tsx` | NDA/MSA dropdown |
+| `components/upload/DropZone.tsx` | Drag/drop + file picker |
+| `components/upload/TermPreviewList.tsx` | Standard + custom term preview |
+| `components/upload/CustomTermInput.tsx` | Add custom term input |
+| `components/upload/ProcessingProgress.tsx` | 3-step processing stepper |
 | `app/api/contracts/upload/route.ts` | POST /api/contracts/upload |
 | `lib/pdf/extractor.ts` | pdf-parse wrapper |
 | `lib/validation/upload.schema.ts` | Zod validation schema |

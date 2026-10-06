@@ -94,7 +94,7 @@ export const keyTermPatchSchema = z.object({
 
 ---
 
-### Inline Edit UX in `KeyTermCard.jsx`
+### Inline Edit UX in `KeyTermCard.tsx`
 
 ```
 State:
@@ -240,7 +240,7 @@ export const feedbackSchema = z.object({
 
 ---
 
-### Component: `components/contracts/FeedbackWidget.jsx`
+### Component: `components/contracts/FeedbackWidget.tsx`
 
 ```
 'use client'

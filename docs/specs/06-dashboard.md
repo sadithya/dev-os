@@ -41,14 +41,14 @@
 
 | File | Purpose |
 |---|---|
-| `app/(protected)/dashboard/page.jsx` | Dashboard page (server component) |
-| `components/dashboard/StatCard.jsx` | Individual stat display |
-| `components/dashboard/ContractTable.jsx` | Sortable contract list |
-| `components/dashboard/EmptyState.jsx` | Empty state illustration + CTA |
+| `app/(protected)/dashboard/page.tsx` | Dashboard page (Server Component) |
+| `components/dashboard/StatCard.tsx` | Individual stat display |
+| `components/dashboard/ContractTable.tsx` | Sortable contract list ('use client') |
+| `components/dashboard/EmptyState.tsx` | Empty state illustration + CTA |
 
 ---
 
-## Page: `app/(protected)/dashboard/page.jsx`
+## Page: `app/(protected)/dashboard/page.tsx`
 
 ```
 Server Component — fetches contracts via Supabase server client.
